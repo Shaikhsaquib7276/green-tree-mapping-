@@ -44,3 +44,23 @@
   .tree-location-map { height: 260px; }
   .location-picker-heading { align-items: flex-start; }
 }
+
+
+/* Admin readability and helpful empty state */
+.admin-page{font-size:16px}
+.admin-page .page-intro p,.admin-page .page-intro span:not(.eyebrow){font-size:16px;line-height:1.75}
+.admin-form label,.admin-login label{font-size:14px;color:#334b3c;font-weight:600}
+.admin-form input,.admin-form select,.admin-form textarea,.admin-login input{font-size:15px;min-height:44px;color:#19372b}
+.admin-form input::placeholder,.admin-login input::placeholder{color:#68796d;opacity:1}
+.admin-records{min-width:0;color:#19372b}
+.admin-records .results-bar{font-size:14px;color:#42594a}
+.admin-record h3{font-size:18px;color:#19372b}
+.admin-record small{font-size:13px;color:#52685a;line-height:1.5}
+.admin-actions .clear-button{font-size:13px;color:#284b37}
+.admin-empty-state{background:#fff;border:1px solid var(--line);padding:30px 24px;margin-top:12px;color:#405849;text-align:center;line-height:1.65}
+.admin-empty-state svg{color:var(--green);margin-bottom:8px}
+.admin-empty-state h3{font-size:21px;color:var(--ink);margin:0 0 10px}
+.admin-empty-state p{font-size:15px;line-height:1.75;margin:0 auto 12px;max-width:460px}
+.admin-empty-state small{display:block;font-size:13px;color:#52685a;line-height:1.6}
+.admin-empty-state code{background:#edf3e9;padding:2px 5px;border-radius:4px;color:#19372b}
+@media(max-width:900px){.admin-records{min-width:0}.admin-record{align-items:flex-start;flex-wrap:wrap}.admin-actions{flex-wrap:wrap}}
