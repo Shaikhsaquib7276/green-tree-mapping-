@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "./App.css";
-import { GreenMapProvider, submitSurvey, supabase, useGreenMapData } from "./lib/greenmapData";
+import { GreenMapProvider, submitSurvey, supabase, VERIFIED_INVENTORY, useGreenMapData } from "./lib/greenmapData";
 
 const _trees = [
   {
@@ -501,126 +501,83 @@ function Home() {
     </>
   );
 }
-function MapCanvas({ trees: mapTrees, spaces: mapSpaces, setSelectedTree }) {
+function MapCanvas({ trees: mapTrees, spaces: mapSpaces, setSelectedTree, search, showTrees, showSpaces, mapRefCallback }) {
   const mapRef = useRef(null);
+  const leafletRef = useRef(null);
+  const layersRef = useRef({ trees: null, spaces: null });
   useEffect(() => {
     if (!mapRef.current) return;
-    const map = L.map(mapRef.current, { zoomControl: false }).setView(
-      [19.282, 73.049],
-      17,
-    );
+    const map = L.map(mapRef.current, { zoomControl: false }).setView([19.282, 73.049], 16);
+    leafletRef.current = map;
     L.control.zoom({ position: "bottomright" }).addTo(map);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: "&copy; OpenStreetMap contributors",
-    }).addTo(map);
-    const icon = L.divIcon({
-      className: "tree-marker",
-      html: "<span>●</span>",
-      iconSize: [28, 28],
-      iconAnchor: [14, 14],
-    });
-    mapTrees.filter((tree) => Number.isFinite(tree.lat) && Number.isFinite(tree.lng)).forEach((tree) => {
-      const marker = L.marker([tree.lat, tree.lng], { icon }).addTo(map);
-      marker.bindTooltip(tree.common, { direction: "top", offset: [0, -14] });
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "&copy; OpenStreetMap contributors" }).addTo(map);
+    layersRef.current.trees = L.layerGroup().addTo(map);
+    layersRef.current.spaces = L.layerGroup().addTo(map);
+    mapRefCallback.current = map;
+    return () => { map.remove(); leafletRef.current = null; };
+  }, []);
+  useEffect(() => {
+    const map = leafletRef.current;
+    if (!map || !layersRef.current.trees || !layersRef.current.spaces) return;
+    const treeLayer = layersRef.current.trees;
+    const spaceLayer = layersRef.current.spaces;
+    treeLayer.clearLayers();
+    spaceLayer.clearLayers();
+    const query = search.trim().toLowerCase();
+    const validTrees = mapTrees.filter((tree) =>
+      Number.isFinite(Number(tree.lat)) && Number.isFinite(Number(tree.lng)) &&
+      tree.lat !== null && tree.lng !== null &&
+      `${tree.id} ${tree.common} ${tree.zone} ${tree.condition}`.toLowerCase().includes(query)
+    );
+    if (showTrees) validTrees.forEach((tree) => {
+      const marker = L.marker([Number(tree.lat), Number(tree.lng)]).addTo(treeLayer);
+      marker.bindTooltip(`${tree.id} · ${tree.common}`);
       marker.on("click", () => setSelectedTree(tree));
     });
-    const firstSpace = mapSpaces.find((space) => Number.isFinite(space.lat) && Number.isFinite(space.lng));
-    const space = L.circle(firstSpace ? [firstSpace.lat, firstSpace.lng] : [19.2811, 73.0489], {
-      color: "#9cbda0",
-      fillColor: "#b9d8ad",
-      fillOpacity: 0.35,
-      radius: 90,
-      weight: 1,
-    }).addTo(map);
-    space.bindTooltip(firstSpace?.name || "Central Learning Lawn");
-    return () => map.remove();
-  }, [mapTrees, mapSpaces, setSelectedTree]);
+    if (showSpaces) mapSpaces.filter((space) =>
+      Number.isFinite(Number(space.lat)) && Number.isFinite(Number(space.lng)) &&
+      space.lat !== null && space.lng !== null &&
+      `${space.name} ${space.location}`.toLowerCase().includes(query)
+    ).forEach((space) => L.circle([Number(space.lat), Number(space.lng)], {
+      color: "#5d956d", fillColor: "#b9d8ad", fillOpacity: .25, radius: 35, weight: 1,
+    }).bindTooltip(space.name).addTo(spaceLayer));
+  }, [mapTrees, mapSpaces, setSelectedTree, search, showTrees, showSpaces]);
   return <div className="map-canvas" ref={mapRef} />;
 }
 function MapPage({ selectedTree, setSelectedTree }) {
-  const { trees: mapTrees, spaces: mapSpaces, loading, demoMode } = useGreenMapData();
+  const { trees: mapTrees, spaces: mapSpaces, loading, demoMode, error } = useGreenMapData();
+  const [search, setSearch] = useState("");
+  const [showTrees, setShowTrees] = useState(true);
+  const [showSpaces, setShowSpaces] = useState(true);
+  const mapRefCallback = useRef(null);
+  const mappedCount = mapTrees.filter(t => t.lat !== null && t.lng !== null && Number.isFinite(Number(t.lat)) && Number.isFinite(Number(t.lng))).length;
   return (
     <div className="page-shell map-page">
-      <PageIntro eyebrow="Explore the data" title="Interactive tree map">
-        <span>
-          Explore mapped trees and green spaces across the project area.
-        </span>
+      <PageIntro eyebrow="Explore verified locations" title="Interactive tree map">
+        <span>Only stored records with valid GPS coordinates appear as map markers. The aggregate field inventory does not contain verified individual coordinates.</span>
       </PageIntro>
       <DemoNotice loading={loading} demoMode={demoMode} />
+      {error && <p className="form-error">Database error: {error}. Live records may not be available.</p>}
       <div className="map-toolbar">
-        <div className="search-field">
-          <Icon name="search" size={18} />
-          <input placeholder="Search a tree, species or zone" />
-        </div>
-        <button className="filter-chip active">
-          <span className="legend-dot tree-dot" /> Trees <b>{mapTrees.length}</b>
-        </button>
-        <button className="filter-chip">
-          <span className="legend-dot space-dot" /> Green spaces{" "}
-          <b>{mapSpaces.length}</b>
-        </button>
-        <button className="filter-chip">Reset view</button>
+        <div className="search-field"><Icon name="search" size={18} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search tree ID, species or zone" /></div>
+        <button className={`filter-chip ${showTrees ? "active" : ""}`} onClick={() => setShowTrees(v => !v)}><span className="legend-dot tree-dot" /> Trees <b>{mapTrees.length}</b></button>
+        <button className={`filter-chip ${showSpaces ? "active" : ""}`} onClick={() => setShowSpaces(v => !v)}><span className="legend-dot space-dot" /> Green spaces <b>{mapSpaces.length}</b></button>
+        <button className="filter-chip" onClick={() => { setSearch(""); setSelectedTree(null); if (mapRefCallback.current) mapRefCallback.current.setView([19.282,73.049],16); }}>Reset view</button>
       </div>
       <div className="map-layout">
         <div className="map-frame">
-          <MapCanvas trees={mapTrees} spaces={mapSpaces} setSelectedTree={setSelectedTree} />
-          <div className="map-legend">
-            <b>Map legend</b>
-            <span>
-              <i className="legend-dot tree-dot" /> Documented tree
-            </span>
-            <span>
-              <i className="legend-dot space-dot" /> Green space area
-            </span>
-            <small>Demo coordinates · replace with verified GPS data</small>
-          </div>
+          <MapCanvas trees={mapTrees} spaces={mapSpaces} setSelectedTree={setSelectedTree} search={search} showTrees={showTrees} showSpaces={showSpaces} mapRefCallback={mapRefCallback} />
+          <div className="map-legend"><b>Map legend</b><span><i className="legend-dot tree-dot" /> Stored tree with GPS</span><span><i className="legend-dot space-dot" /> Stored green space with GPS</span><small>{mappedCount} of {mapTrees.length} tree records have usable coordinates</small></div>
         </div>
         <aside className="map-aside">
-          {selectedTree ? (
-            <TreePreview tree={selectedTree} />
-          ) : (
-            <>
-              <div className="aside-kicker">
-                <span className="eyebrow">Map index</span>
-                <span className="live-pill">
-                  <i /> Demo layer
-                </span>
-              </div>
-              <h2>
-                Find a story
-                <br />
-                <em>in the canopy.</em>
-              </h2>
-              <p>
-                Select any marker to preview the record. All coordinates
-                currently shown are sample data.
-              </p>
-              <div className="map-count">
-                <strong>{mapTrees.length}</strong>
-                <span>
-                  sample trees
-                  <br />
-                  mapped
-                </span>
-              </div>
-              <div className="aside-list">
-                {mapTrees.slice(0, 3).map((tree) => (
-                  <button key={tree.id} onClick={() => setSelectedTree(tree)}>
-                    <span className="list-marker">
-                      <Icon name="tree" size={15} />
-                    </span>
-                    <span>
-                      <b>{tree.common}</b>
-                      <small>
-                        {tree.zone} · {tree.condition}
-                      </small>
-                    </span>
-                    <Icon name="arrow" size={15} />
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
+          {selectedTree ? <TreePreview tree={selectedTree} /> : <>
+            <div className="aside-kicker"><span className="eyebrow">Stored records</span><span className="live-pill"><i /> {demoMode ? "Not connected" : "Database"}</span></div>
+            <h2>Verified places,<br/><em>not guessed pins.</em></h2>
+            <p>The field survey confirms 38 trees in total, but it does not provide 38 verified GPS points. Add verified coordinates through an authorized admin account.</p>
+            <div className="map-count"><strong>{mappedCount}</strong><span>tree records<br/>with coordinates</span></div>
+            <div className="aside-list">{mapTrees.filter(t => t.lat !== null && t.lng !== null).slice(0,5).map(tree => <button key={tree.id} onClick={() => { setSelectedTree(tree); if(mapRefCallback.current) mapRefCallback.current.setView([Number(tree.lat),Number(tree.lng)],18); }}><span className="list-marker"><Icon name="tree" size={15}/></span><span><b>{tree.common}</b><small>{tree.zone} · {tree.condition}</small></span><Icon name="arrow" size={15}/></button>)}</div>
+            {!mappedCount && <p>No tree records with verified coordinates are stored yet.</p>}
+          </>}
         </aside>
       </div>
     </div>
@@ -649,27 +606,54 @@ function PickerMap({ value, onPick }) {
   return <div className="picker-map" ref={mapRef} />
 }
 function Admin() {
-  const { trees: adminTrees, createTree, updateTree, deleteTree, demoMode } = useGreenMapData()
-  const [session, setSession] = useState(null)
-  const [authForm, setAuthForm] = useState({ email: "", password: "" })
-  const [authError, setAuthError] = useState("")
-  const [editing, setEditing] = useState(null)
-  const [formError, setFormError] = useState("")
-  const [form, setForm] = useState({ id: "", common: "", scientific: "", family: "", zone: "", condition: "Healthy", date: new Date().toISOString().slice(0, 10), lat: 19.282, lng: 73.049, remark: "", image: "" })
+  const { trees: adminTrees, createTree, updateTree, deleteTree, demoMode, error } = useGreenMapData();
+  const [session, setSession] = useState(null);
+  const [roleChecked, setRoleChecked] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [authForm, setAuthForm] = useState({ email: "", password: "" });
+  const [authError, setAuthError] = useState("");
+  const [editing, setEditing] = useState(null);
+  const [formError, setFormError] = useState("");
+  const initialForm = { id: "", common: "", scientific: "", family: "", zone: "", condition: "Uncertain", date: new Date().toISOString().slice(0, 10), lat: "", lng: "", remark: "", image: "" };
+  const [form, setForm] = useState(initialForm);
   useEffect(() => {
-    if (!supabase) return
-    supabase.auth.getSession().then(({ data }) => setSession(data.session))
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => setSession(nextSession))
-    return () => listener.subscription.unsubscribe()
-  }, [])
-  const setField = (key, value) => setForm((current) => ({ ...current, [key]: value }))
-  const startEdit = (tree) => { setEditing(tree.id); setForm({ ...tree, lat: tree.lat || 19.282, lng: tree.lng || 73.049 }) }
-  const resetForm = () => { setEditing(null); setForm({ id: "", common: "", scientific: "", family: "", zone: "", condition: "Healthy", date: new Date().toISOString().slice(0, 10), lat: 19.282, lng: 73.049, remark: "", image: "" }) }
-  const saveTree = async (event) => { event.preventDefault(); setFormError(""); if (!form.id || !form.common || !form.zone || !Number.isFinite(Number(form.lat)) || !Number.isFinite(Number(form.lng))) { setFormError("Tree ID, common name, zone, latitude, and longitude are required."); return } try { const next = { ...form, lat: Number(form.lat), lng: Number(form.lng) }; if (editing) await updateTree(next); else await createTree(next); resetForm() } catch (error) { setFormError(error.message || "Could not save this tree record.") } }
-  const removeTree = async (tree) => { if (!window.confirm(`Delete ${tree.id}? This cannot be undone.`)) return; try { await deleteTree(tree.id) } catch (error) { setFormError(error.message || "Could not delete this record.") } }
-  const login = async (event) => { event.preventDefault(); setAuthError(""); const { error } = await supabase.auth.signInWithPassword(authForm); if (error) setAuthError(error.message) }
-  if (supabase && !session) return <div className="page-shell admin-page"><PageIntro eyebrow="Data management" title="Admin sign in"><span>Sign in with the Supabase account authorized to manage field records.</span></PageIntro><form className="admin-login" onSubmit={login}><span className="eyebrow">Authorized access</span><input type="email" required placeholder="Email" value={authForm.email} onChange={(event) => setAuthForm({ ...authForm, email: event.target.value })} /><input type="password" required placeholder="Password" value={authForm.password} onChange={(event) => setAuthForm({ ...authForm, password: event.target.value })} />{authError && <p className="form-error">{authError}</p>}<button className="button button-dark">Sign in <Icon name="arrow" size={16} /></button></form></div>
-  return <div className="page-shell admin-page"><PageIntro eyebrow="Authorized data management" title="Tree records"><span>{demoMode ? "Local CRUD mode: changes stay in this browser session until Supabase is connected." : "Connected CRUD mode: changes are saved to the Supabase trees table."}</span></PageIntro><div className="admin-layout"><form className="admin-form" onSubmit={saveTree}><div className="form-heading"><span className="eyebrow">{editing ? "Edit record" : "Add a tree"}</span><button type="button" className="clear-button" onClick={resetForm}>Clear</button></div><label>Tree ID<input value={form.id} disabled={Boolean(editing)} onChange={(event) => setField("id", event.target.value.toUpperCase())} placeholder="TREE-006" /></label><div className="form-row"><label>Common name<input value={form.common} onChange={(event) => setField("common", event.target.value)} /></label><label>Scientific name<input value={form.scientific} onChange={(event) => setField("scientific", event.target.value)} /></label></div><div className="form-row"><label>Family<input value={form.family} onChange={(event) => setField("family", event.target.value)} /></label><label>Zone<input value={form.zone} onChange={(event) => setField("zone", event.target.value)} /></label></div><div className="form-row"><label>Condition<select value={form.condition} onChange={(event) => setField("condition", event.target.value)}><option>Healthy</option><option>Fair</option><option>Needs Attention</option><option>Damaged</option><option>Dead</option></select></label><label>Date surveyed<input type="date" value={form.date || ""} onChange={(event) => setField("date", event.target.value)} /></label></div><div className="form-row"><label>Latitude<input type="number" step="any" value={form.lat} onChange={(event) => setField("lat", event.target.value)} /></label><label>Longitude<input type="number" step="any" value={form.lng} onChange={(event) => setField("lng", event.target.value)} /></label></div><p className="picker-help">Click the map to place or update the tree marker.</p><PickerMap value={{ lat: Number(form.lat), lng: Number(form.lng) }} onPick={({ lat, lng }) => setForm((current) => ({ ...current, lat, lng }))} /><label>Remarks<textarea rows="3" value={form.remark} onChange={(event) => setField("remark", event.target.value)} /></label><label>Photo URL<input value={form.image} onChange={(event) => setField("image", event.target.value)} placeholder="Optional approved field-photo URL" /></label>{formError && <p className="form-error">{formError}</p>}<button className="button button-dark" type="submit">{editing ? "Update tree" : "Create tree"} <Icon name="arrow" size={16} /></button></form><section className="admin-records"><div className="results-bar"><span><b>{adminTrees.length}</b> records</span><span>CRUD enabled</span></div>{adminTrees.map((tree) => <article className="admin-record" key={tree.id}><div><span className="eyebrow">{tree.id}</span><h3>{tree.common}</h3><small>{tree.zone} · {tree.condition}</small></div><div className="admin-actions"><button className="clear-button" onClick={() => startEdit(tree)}>Edit</button><button className="clear-button danger" onClick={() => removeTree(tree)}>Delete</button></div></article>)}</section></div></div>
+    if (!supabase) { setRoleChecked(true); return undefined; }
+    let active = true;
+    const resolve = async (nextSession) => {
+      if (!active) return;
+      setSession(nextSession);
+      if (!nextSession) { setIsAdmin(false); setRoleChecked(true); return; }
+      const role = nextSession.user?.app_metadata?.role;
+      setIsAdmin(role === "admin");
+      setRoleChecked(true);
+    };
+    supabase.auth.getSession().then(({data}) => resolve(data.session));
+    const { data: listener } = supabase.auth.onAuthStateChange((_event,nextSession) => resolve(nextSession));
+    return () => { active = false; listener.subscription.unsubscribe(); };
+  }, []);
+  const setField = (key, value) => setForm(current => ({...current,[key]:value}));
+  const startEdit = tree => { setEditing(tree.id); setForm({...tree, lat: tree.lat ?? "", lng: tree.lng ?? ""}); };
+  const resetForm = () => { setEditing(null); setForm({...initialForm,date:new Date().toISOString().slice(0,10)}); };
+  const saveTree = async event => {
+    event.preventDefault(); setFormError("");
+    if (!isAdmin) { setFormError("Administrator role required."); return; }
+    if (!form.id || !form.common || !form.zone) { setFormError("Tree ID, common name and zone are required."); return; }
+    const latEmpty = form.lat === "" || form.lat === null;
+    const lngEmpty = form.lng === "" || form.lng === null;
+    if (latEmpty !== lngEmpty) { setFormError("Enter both latitude and longitude, or leave both blank until verified."); return; }
+    const lat = latEmpty ? null : Number(form.lat), lng = lngEmpty ? null : Number(form.lng);
+    if (!latEmpty && (!Number.isFinite(lat)||!Number.isFinite(lng)||lat < -90||lat>90||lng < -180||lng>180)) { setFormError("Latitude must be -90 to 90 and longitude -180 to 180."); return; }
+    try { const next={...form,lat,lng}; if(editing) await updateTree(next); else await createTree(next); resetForm(); }
+    catch(e) { setFormError(e.message || "Could not save record."); }
+  };
+  const removeTree = async tree => { if(!isAdmin) return; if(!window.confirm(`Delete ${tree.id}? This cannot be undone.`)) return; try { await deleteTree(tree.id); } catch(e) { setFormError(e.message || "Could not delete record."); } };
+  const login = async event => { event.preventDefault(); setAuthError(""); if(!supabase){setAuthError("Supabase is not configured. Sign-in and write actions are disabled.");return;} const {error}=await supabase.auth.signInWithPassword(authForm); if(error)setAuthError(error.message); };
+  const logout = async () => { if(supabase) await supabase.auth.signOut(); setSession(null); setIsAdmin(false); resetForm(); };
+  if (!supabase) return <div className="page-shell admin-page"><PageIntro eyebrow="Read-only until configured" title="Admin sign in"><span>Tree management is disabled because Supabase is not configured. Configure the public project URL/key and run the secured SQL schema before enabling database operations.</span></PageIntro><div className="empty-state"><h3>No local-only CRUD</h3><p>This prevents changes from appearing to save when they would disappear on refresh.</p></div></div>;
+  if (!roleChecked) return <div className="page-shell admin-page"><PageIntro eyebrow="Checking access" title="Admin sign in"><span>Verifying your session and role…</span></PageIntro></div>;
+  if (!session) return <div className="page-shell admin-page"><PageIntro eyebrow="Protected data management" title="Admin sign in"><span>Sign in with a Supabase account whose trusted app metadata contains role = admin. A regular authenticated account is not enough.</span></PageIntro><form className="admin-login" onSubmit={login}><span className="eyebrow">Administrator access only</span><input type="email" required placeholder="Email" value={authForm.email} onChange={e=>setAuthForm({...authForm,email:e.target.value})}/><input type="password" required placeholder="Password" value={authForm.password} onChange={e=>setAuthForm({...authForm,password:e.target.value})}/>{authError&&<p className="form-error">{authError}</p>}<button className="button button-dark">Sign in <Icon name="arrow" size={16}/></button></form></div>;
+  if (!isAdmin) return <div className="page-shell admin-page"><PageIntro eyebrow="Access denied" title="Administrator role required"><span>This account is signed in but does not have the trusted admin role. Contact the project owner; do not change app_metadata from browser code.</span></PageIntro><button className="button button-dark" onClick={logout}>Sign out</button></div>;
+  return <div className="page-shell admin-page"><PageIntro eyebrow="Authorized data management" title="Tree records"><span>Signed in as administrator. Coordinates may remain blank until field-verified. Database permissions are enforced by Supabase row-level security.</span></PageIntro><button className="clear-button" onClick={logout}>Sign out</button>{error&&<p className="form-error">Database error: {error}</p>}<div className="admin-layout"><form className="admin-form" onSubmit={saveTree}><div className="form-heading"><span className="eyebrow">{editing?"Edit record":"Add a tree"}</span><button type="button" className="clear-button" onClick={resetForm}>Clear</button></div><label>Tree ID<input value={form.id} disabled={Boolean(editing)} onChange={e=>setField("id",e.target.value.toUpperCase())} placeholder="TREE-039"/></label><div className="form-row"><label>Common name<input required value={form.common} onChange={e=>setField("common",e.target.value)}/></label><label>Scientific name<input value={form.scientific} onChange={e=>setField("scientific",e.target.value)}/></label></div><div className="form-row"><label>Family<input value={form.family} onChange={e=>setField("family",e.target.value)}/></label><label>Zone<input required value={form.zone} onChange={e=>setField("zone",e.target.value)}/></label></div><div className="form-row"><label>Condition<select value={form.condition} onChange={e=>setField("condition",e.target.value)}><option>Healthy</option><option>Fair</option><option>Needs Attention</option><option>Damaged</option><option>Dead</option><option>Uncertain</option></select></label><label>Date surveyed<input type="date" value={form.date||""} onChange={e=>setField("date",e.target.value)}/></label></div><div className="form-row"><label>Latitude (optional)<input type="number" step="any" value={form.lat} onChange={e=>setField("lat",e.target.value)}/></label><label>Longitude (optional)<input type="number" step="any" value={form.lng} onChange={e=>setField("lng",e.target.value)}/></label></div><p className="picker-help">Leave coordinates blank until the individual tree location has been verified.</p><label>Remarks<textarea rows="3" value={form.remark} onChange={e=>setField("remark",e.target.value)}/></label><label>Photo URL<input value={form.image} onChange={e=>setField("image",e.target.value)} placeholder="Optional approved field-photo URL"/></label>{formError&&<p className="form-error">{formError}</p>}<button className="button button-dark" type="submit">{editing?"Update tree":"Create tree"} <Icon name="arrow" size={16}/></button></form><section className="admin-records"><div className="results-bar"><span><b>{adminTrees.length}</b> stored records</span><span>Admin CRUD</span></div>{adminTrees.map(tree=><article className="admin-record" key={tree.id}><div><span className="eyebrow">{tree.id}</span><h3>{tree.common}</h3><small>{tree.zone} · {tree.condition} · {tree.lat==null?"No GPS":`${tree.lat}, ${tree.lng}`}</small></div><div className="admin-actions"><button className="clear-button" onClick={()=>startEdit(tree)}>Edit</button><button className="clear-button danger" onClick={()=>removeTree(tree)}>Delete</button></div></article>)}</section></div></div>;
 }
 function TreePreview({ tree }) {
   return (
@@ -943,101 +927,35 @@ function GreenSpaces() {
   );
 }
 function Statistics() {
-  const { trees: statisticTrees, spaces: statisticSpaces, loading, demoMode } = useGreenMapData();
-  const species = [...new Set(statisticTrees.map((t) => t.common))];
-  const attention = statisticTrees.filter((t) =>
-    ["Needs Attention", "Damaged"].includes(t.condition),
-  ).length;
-  const conditions = ["Healthy", "Fair", "Needs Attention", "Damaged"];
-  return (
-    <div className="page-shell">
-      <PageIntro eyebrow="Read the patterns" title="Green-cover insights">
-        <span>
-          Simple, transparent summaries calculated from the records currently in
-          this workspace.
-        </span>
-      </PageIntro>
-      <DemoNotice loading={loading} demoMode={demoMode} />
-      <div className="stats-grid">
-        {[
-          ["Total trees", statisticTrees.length, demoMode ? "sample records" : "database records"],
-          ["Species documented", species.length, "unique common names"],
-          ["Green spaces", statisticSpaces.length, demoMode ? "sample areas" : "database areas"],
-          ["Needs attention", attention, "follow-up records"],
-        ].map(([label, value, sub], i) => (
-          <div className={`stat-card ${i === 0 ? "accent" : ""}`} key={label}>
-            <span className="eyebrow">{label}</span>
-            <strong>{value}</strong>
-            <small>{sub}</small>
-          </div>
-        ))}
-      </div>
-      <div className="chart-grid">
-        <section className="chart-card">
-          <div className="chart-heading">
-            <div>
-              <span className="eyebrow">Species profile</span>
-              <h2>Trees by species</h2>
-            </div>
-            <Icon name="chart" size={22} />
-          </div>
-          <div className="bar-chart">
-            {statisticTrees.map((t, i) => (
-              <div className="bar-row" key={t.id}>
-                <span>{t.common}</span>
-                <div>
-                  <i style={{ width: `${88 - i * 12}%` }} />
-                </div>
-                <b>1</b>
-              </div>
-            ))}
-          </div>
-        </section>
-        <section className="chart-card">
-          <div className="chart-heading">
-            <div>
-              <span className="eyebrow">Condition check</span>
-              <h2>Record distribution</h2>
-            </div>
-            <span className="donut" />
-          </div>
-          <div className="condition-list">
-            {conditions.map((c) => (
-              <div key={c}>
-                <span
-                  className={`condition ${c.toLowerCase().replaceAll(" ", "-")}`}
-                >
-                  {c}
-                </span>
-                <b>{statisticTrees.filter((t) => t.condition === c).length}</b>
-                <small>
-                  {Math.round(
-                    (statisticTrees.filter((t) => t.condition === c).length /
-                      (statisticTrees.length || 1)) *
-                      100,
-                  )}
-                  %
-                </small>
-              </div>
-            ))}
-          </div>
-        </section>
-      </div>
-      <div className="insight-strip">
-        <div>
-          <span className="eyebrow">Green-cover observation</span>
-          <h2>{statisticTrees[0]?.common || "No tree records yet"} is the most represented {demoMode ? "sample " : ""}species.</h2>
-          <p>
-            This is a descriptive summary of the current demo records, not a
-            claim about the wider campus or community.
-          </p>
-        </div>
-        <a className="button button-dark" href="#/trees">
-          Review records <Icon name="arrow" size={16} />
-        </a>
-      </div>
+  const { trees, spaces, loading, demoMode, error, inventorySummary } = useGreenMapData();
+  const inventory = inventorySummary || VERIFIED_INVENTORY;
+  const totalStored = trees.length;
+  const mapped = trees.filter(t => t.lat !== null && t.lng !== null && Number.isFinite(Number(t.lat)) && Number.isFinite(Number(t.lng))).length;
+  const actualConditionCounts = trees.reduce((acc, t) => { const key=t.condition || "Uncertain"; acc[key]=(acc[key]||0)+1; return acc; }, {});
+  const showVerifiedAggregate = Boolean(inventory?.verified);
+  const speciesRows = showVerifiedAggregate ? inventory.speciesCounts : Object.entries(trees.reduce((acc,t)=>{ const key=t.common || "Unidentified"; acc[key]=(acc[key]||0)+1; return acc; },{})).map(([name,count])=>({name,count}));
+  const zoneRows = showVerifiedAggregate ? inventory.zoneCounts : Object.entries(trees.reduce((acc,t)=>{const key=t.zone||"Zone not recorded";acc[key]=(acc[key]||0)+1;return acc;},{})).map(([name,count])=>({name,count}));
+  const conditionRows = showVerifiedAggregate ? inventory.conditionCounts : Object.entries(actualConditionCounts).map(([name,count])=>({name,count}));
+  const maxSpecies = Math.max(1,...speciesRows.map(x=>x.count));
+  const maxZone = Math.max(1,...zoneRows.map(x=>x.count));
+  const maxCondition = Math.max(1,...conditionRows.map(x=>x.count));
+  return <div className="page-shell statistics-page">
+    <PageIntro eyebrow="Field data, transparently reported" title="Green-cover insights"><span>Verified survey aggregates are kept separate from the live database register. Statistics never assign aggregate counts to invented individual trees.</span></PageIntro>
+    <DemoNotice loading={loading} demoMode={demoMode}/>
+    {error && <p className="form-error">Database error: {error}</p>}
+    <div className="stats-grid">
+      <div className="stat-card accent"><span className="eyebrow">Verified field survey</span><strong>{showVerifiedAggregate ? inventory.totalTrees : "—"}</strong><small>trees counted on {inventory.surveyDate || "survey date not recorded"}</small></div>
+      <div className="stat-card"><span className="eyebrow">Database register</span><strong>{totalStored}</strong><small>individual tree records stored</small></div>
+      <div className="stat-card"><span className="eyebrow">Mapped records</span><strong>{mapped}</strong><small>stored trees with valid GPS coordinates</small></div>
+      <div className="stat-card"><span className="eyebrow">Green spaces</span><strong>{spaces.length}</strong><small>stored green-space records</small></div>
     </div>
-  );
+    <div className="chart-grid">
+      <section className="chart-card"><div className="chart-heading"><Icon name="chart" size={21}/><span className="eyebrow">{showVerifiedAggregate ? "Verified survey aggregate" : "Database register"}</span></div><h2>Species / category counts</h2><div className="bar-chart">{speciesRows.map(row=><div className="bar-row" key={row.name}><span>{row.name}</span><div><i style={{width:`${row.count/maxSpecies*100}%`}}/></div><b>{row.count}</b></div>)}</div></section>
+      <section className="chart-card"><div className="chart-heading"><Icon name="map" size={21}/><span className="eyebrow">{showVerifiedAggregate ? "Verified survey aggregate" : "Database register"}</span></div><h2>Distribution by zone</h2><div className="bar-chart">{zoneRows.map(row=><div className="bar-row" key={row.name}><span>{row.name}</span><div><i style={{width:`${row.count/maxZone*100}%`}}/></div><b>{row.count}</b></div>)}</div></section>
+    </div>
+    <section className="chart-card" style={{marginTop:15}}><div className="chart-heading"><Icon name="leaf" size={21}/><span className="eyebrow">{showVerifiedAggregate ? "Verified survey aggregate" : "Database register"}</span></div><h2>Observed tree condition</h2><div className="condition-list">{conditionRows.map(row=><div key={row.name}><span>{row.name}</span><b>{row.count}</b><small>{(showVerifiedAggregate ? inventory.totalTrees : totalStored) ? `${(row.count/(showVerifiedAggregate ? inventory.totalTrees : totalStored)*100).toFixed(1)}%` : "—"}</small></div>)}</div></section>
+    <div className="insight-strip"><div><span className="eyebrow">Data quality note</span><h2>{showVerifiedAggregate ? "38 survey counts verified; individual GPS records remain separate." : "Waiting for verified survey summary."}</h2><p>{showVerifiedAggregate ? "Species, zone and condition totals describe the survey summary, not the current number of database rows or map markers." : "Run the supplied Supabase schema to store the verified aggregate summary."}</p></div><a className="button button-dark" href="#/map">Explore stored map records <Icon name="arrow" size={16}/></a></div>
+  </div>;
 }
 function Survey() {
   const [submitted, setSubmitted] = useState(false);
