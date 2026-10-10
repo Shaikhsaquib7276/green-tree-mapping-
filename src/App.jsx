@@ -605,6 +605,92 @@ function PickerMap({ value, onPick }) {
   }, [])
   return <div className="picker-map" ref={mapRef} />
 }
+function TreeLocationPicker({ lat, lng, onChange }) {
+  const containerRef = useRef(null);
+  const mapRef = useRef(null);
+  const markerRef = useRef(null);
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const hasCoords = lat !== "" && lng !== "" && Number.isFinite(Number(lat)) && Number.isFinite(Number(lng));
+    const initialPoint = hasCoords ? [Number(lat), Number(lng)] : [19.8, 72.75];
+    const map = L.map(containerRef.current, { zoomControl: true }).setView(initialPoint, hasCoords ? 18 : 15);
+    mapRef.current = map;
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "&copy; OpenStreetMap contributors",
+      maxZoom: 19,
+    }).addTo(map);
+
+    const placeMarker = (point) => {
+      if (!markerRef.current) {
+        markerRef.current = L.marker(point, { draggable: true }).addTo(map);
+        markerRef.current.on("dragend", () => {
+          const position = markerRef.current.getLatLng();
+          onChangeRef.current(position.lat.toFixed(7), position.lng.toFixed(7));
+        });
+      } else {
+        markerRef.current.setLatLng(point);
+      }
+      onChangeRef.current(point[0].toFixed(7), point[1].toFixed(7));
+    };
+
+    if (hasCoords) {
+      markerRef.current = L.marker(initialPoint, { draggable: true }).addTo(map);
+      markerRef.current.on("dragend", () => {
+        const position = markerRef.current.getLatLng();
+        onChangeRef.current(position.lat.toFixed(7), position.lng.toFixed(7));
+      });
+    }
+    map.on("click", (event) => placeMarker([event.latlng.lat, event.latlng.lng]));
+    const resizeTimer = window.setTimeout(() => map.invalidateSize(), 100);
+    return () => {
+      window.clearTimeout(resizeTimer);
+      map.remove();
+      mapRef.current = null;
+      markerRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const hasCoords = lat !== "" && lng !== "" && Number.isFinite(Number(lat)) && Number.isFinite(Number(lng));
+    if (hasCoords) {
+      const point = [Number(lat), Number(lng)];
+      if (!markerRef.current) {
+        markerRef.current = L.marker(point, { draggable: true }).addTo(map);
+        markerRef.current.on("dragend", () => {
+          const position = markerRef.current.getLatLng();
+          onChangeRef.current(position.lat.toFixed(7), position.lng.toFixed(7));
+        });
+      } else {
+        markerRef.current.setLatLng(point);
+      }
+    } else if (markerRef.current) {
+      map.removeLayer(markerRef.current);
+      markerRef.current = null;
+    }
+  }, [lat, lng]);
+
+  return (
+    <div className="location-picker">
+      <div className="location-picker-heading">
+        <label>Tree location <span>(optional until verified)</span></label>
+        <button type="button" className="clear-button" onClick={() => onChange("", "")}>Clear location</button>
+      </div>
+      <p className="picker-help">Tap/click the map to place the tree pin, or drag the pin to adjust it. You can also enter exact coordinates below.</p>
+      <div ref={containerRef} className="tree-location-map" role="application" aria-label="Choose tree location on map" />
+      <div className="form-row">
+        <label>Latitude<input type="number" step="any" value={lat} onChange={e => onChange(e.target.value, lng)} /></label>
+        <label>Longitude<input type="number" step="any" value={lng} onChange={e => onChange(lat, e.target.value)} /></label>
+      </div>
+      <small className="picker-help">Map tiles by OpenStreetMap contributors. Confirm the pin on site before saving.</small>
+    </div>
+  );
+}
+
 function Admin() {
   const { trees: adminTrees, createTree, updateTree, deleteTree, demoMode, error } = useGreenMapData();
   const [session, setSession] = useState(null);
@@ -653,7 +739,7 @@ function Admin() {
   if (!roleChecked) return <div className="page-shell admin-page"><PageIntro eyebrow="Checking access" title="Admin sign in"><span>Verifying your session and role…</span></PageIntro></div>;
   if (!session) return <div className="page-shell admin-page"><PageIntro eyebrow="Protected data management" title="Admin sign in"><span>Sign in with a Supabase account whose trusted app metadata contains role = admin. A regular authenticated account is not enough.</span></PageIntro><form className="admin-login" onSubmit={login}><span className="eyebrow">Administrator access only</span><input type="email" required placeholder="Email" value={authForm.email} onChange={e=>setAuthForm({...authForm,email:e.target.value})}/><input type="password" required placeholder="Password" value={authForm.password} onChange={e=>setAuthForm({...authForm,password:e.target.value})}/>{authError&&<p className="form-error">{authError}</p>}<button className="button button-dark">Sign in <Icon name="arrow" size={16}/></button></form></div>;
   if (!isAdmin) return <div className="page-shell admin-page"><PageIntro eyebrow="Access denied" title="Administrator role required"><span>This account is signed in but does not have the trusted admin role. Contact the project owner; do not change app_metadata from browser code.</span></PageIntro><button className="button button-dark" onClick={logout}>Sign out</button></div>;
-  return <div className="page-shell admin-page"><PageIntro eyebrow="Authorized data management" title="Tree records"><span>Signed in as administrator. Coordinates may remain blank until field-verified. Database permissions are enforced by Supabase row-level security.</span></PageIntro><button className="clear-button" onClick={logout}>Sign out</button>{error&&<p className="form-error">Database error: {error}</p>}<div className="admin-layout"><form className="admin-form" onSubmit={saveTree}><div className="form-heading"><span className="eyebrow">{editing?"Edit record":"Add a tree"}</span><button type="button" className="clear-button" onClick={resetForm}>Clear</button></div><label>Tree ID<input value={form.id} disabled={Boolean(editing)} onChange={e=>setField("id",e.target.value.toUpperCase())} placeholder="TREE-039"/></label><div className="form-row"><label>Common name<input required value={form.common} onChange={e=>setField("common",e.target.value)}/></label><label>Scientific name<input value={form.scientific} onChange={e=>setField("scientific",e.target.value)}/></label></div><div className="form-row"><label>Family<input value={form.family} onChange={e=>setField("family",e.target.value)}/></label><label>Zone<input required value={form.zone} onChange={e=>setField("zone",e.target.value)}/></label></div><div className="form-row"><label>Condition<select value={form.condition} onChange={e=>setField("condition",e.target.value)}><option>Healthy</option><option>Fair</option><option>Needs Attention</option><option>Damaged</option><option>Dead</option><option>Uncertain</option></select></label><label>Date surveyed<input type="date" value={form.date||""} onChange={e=>setField("date",e.target.value)}/></label></div><div className="form-row"><label>Latitude (optional)<input type="number" step="any" value={form.lat} onChange={e=>setField("lat",e.target.value)}/></label><label>Longitude (optional)<input type="number" step="any" value={form.lng} onChange={e=>setField("lng",e.target.value)}/></label></div><p className="picker-help">Leave coordinates blank until the individual tree location has been verified.</p><label>Remarks<textarea rows="3" value={form.remark} onChange={e=>setField("remark",e.target.value)}/></label><label>Photo URL<input value={form.image} onChange={e=>setField("image",e.target.value)} placeholder="Optional approved field-photo URL"/></label>{formError&&<p className="form-error">{formError}</p>}<button className="button button-dark" type="submit">{editing?"Update tree":"Create tree"} <Icon name="arrow" size={16}/></button></form><section className="admin-records"><div className="results-bar"><span><b>{adminTrees.length}</b> stored records</span><span>Admin CRUD</span></div>{adminTrees.map(tree=><article className="admin-record" key={tree.id}><div><span className="eyebrow">{tree.id}</span><h3>{tree.common}</h3><small>{tree.zone} · {tree.condition} · {tree.lat==null?"No GPS":`${tree.lat}, ${tree.lng}`}</small></div><div className="admin-actions"><button className="clear-button" onClick={()=>startEdit(tree)}>Edit</button><button className="clear-button danger" onClick={()=>removeTree(tree)}>Delete</button></div></article>)}</section></div></div>;
+  return <div className="page-shell admin-page"><PageIntro eyebrow="Authorized data management" title="Tree records"><span>Signed in as administrator. Coordinates may remain blank until field-verified. Database permissions are enforced by Supabase row-level security.</span></PageIntro><button className="clear-button" onClick={logout}>Sign out</button>{error&&<p className="form-error">Database error: {error}</p>}<div className="admin-layout"><form className="admin-form" onSubmit={saveTree}><div className="form-heading"><span className="eyebrow">{editing?"Edit record":"Add a tree"}</span><button type="button" className="clear-button" onClick={resetForm}>Clear</button></div><label>Tree ID<input value={form.id} disabled={Boolean(editing)} onChange={e=>setField("id",e.target.value.toUpperCase())} placeholder="TREE-039"/></label><div className="form-row"><label>Common name<input required value={form.common} onChange={e=>setField("common",e.target.value)}/></label><label>Scientific name<input value={form.scientific} onChange={e=>setField("scientific",e.target.value)}/></label></div><div className="form-row"><label>Family<input value={form.family} onChange={e=>setField("family",e.target.value)}/></label><label>Zone<input required value={form.zone} onChange={e=>setField("zone",e.target.value)}/></label></div><div className="form-row"><label>Condition<select value={form.condition} onChange={e=>setField("condition",e.target.value)}><option>Healthy</option><option>Fair</option><option>Needs Attention</option><option>Damaged</option><option>Dead</option><option>Uncertain</option></select></label><label>Date surveyed<input type="date" value={form.date||""} onChange={e=>setField("date",e.target.value)}/></label></div><TreeLocationPicker lat={form.lat} lng={form.lng} onChange={(lat,lng)=>{setField("lat",lat);setField("lng",lng);}} /><label>Remarks<textarea rows="3" value={form.remark} onChange={e=>setField("remark",e.target.value)}/></label><label>Photo URL<input value={form.image} onChange={e=>setField("image",e.target.value)} placeholder="Optional approved field-photo URL"/></label>{formError&&<p className="form-error">{formError}</p>}<button className="button button-dark" type="submit">{editing?"Update tree":"Create tree"} <Icon name="arrow" size={16}/></button></form><section className="admin-records"><div className="results-bar"><span><b>{adminTrees.length}</b> stored records</span><span>Admin CRUD</span></div>{adminTrees.map(tree=><article className="admin-record" key={tree.id}><div><span className="eyebrow">{tree.id}</span><h3>{tree.common}</h3><small>{tree.zone} · {tree.condition} · {tree.lat==null?"No GPS":`${tree.lat}, ${tree.lng}`}</small></div><div className="admin-actions"><button className="clear-button" onClick={()=>startEdit(tree)}>Edit</button><button className="clear-button danger" onClick={()=>removeTree(tree)}>Delete</button></div></article>)}</section></div></div>;
 }
 function TreePreview({ tree }) {
   return (
