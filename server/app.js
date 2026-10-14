@@ -36,6 +36,7 @@ app.use('/api/v1/survey',surveyRoutes)
 app.use('/api/v1/statistics',statisticsRoutes)
 app.use('/api/v1/admin',adminRoutes)
 app.get('/api/v1/admin/dashboard',requireAdmin,async(req,res,next)=>{try{const recent=await AuditLog.find().sort({createdAt:-1}).limit(10).lean();res.json({recent})}catch(e){next(e)}})
+app.get('/',(_req,res)=>res.json({ok:true,name:'GreenMap API',message:'GreenMap backend is running.',health:'/api/health',apiBase:'/api/v1'}))
 app.get('/api/health',(req,res)=>res.json({ok:true,service:'greenmap-api'}))
 app.use('/api',(_req,res)=>res.status(404).json({success:false,error:{code:'API_NOT_FOUND',message:'API endpoint not found.'}}))
 app.use((err,req,res,_next)=>{
