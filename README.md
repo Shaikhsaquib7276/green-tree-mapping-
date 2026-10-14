@@ -1,76 +1,133 @@
-# GreenMap — Tree Mapping & Green Cover Documentation
+# GreenMap — MERN tree mapping and green-cover documentation
 
-GreenMap is a React + Vite field-survey website for exploring tree records, green spaces, community survey responses, and verified campus tree-inventory statistics.
+GreenMap is a responsive web application for the digital tree inventory and green-cover documentation at Theem College of Engineering, Betegaon, Chilhar Road.
 
-## Verified survey inventory
+## Technology
 
-The field survey conducted on **20 September 2026** recorded **38 trees** at Theem College of Engineering, Betegaon.
+- **Frontend:** React 19, Vite, Leaflet
+- **Backend:** Node.js, Express, Passport Local
+- **Database:** MongoDB Atlas and Mongoose
+- **Admin sessions:** express-session with MongoDB-backed connect-mongo store
+- **Images:** Cloudinary SDK v2 with Multer memory uploads
+- **Map tiles:** OpenStreetMap with Leaflet
 
-- **By zone:** Main Ground 10, Volleyball Ground 21, Flower Garden 0, Parking 7.
-- **By species/category:** Neem 2, Gulmohar 9, Ashoka 1, Bore 2, Sitaphal 3, Amrud 1, Jamun 2, Khajur 3, Black Jamun 4, White Jamun 2, Badam 2, Other / not identified 7.
-- **Observed condition:** Healthy 25, Needs Attention 10, Uncertain 3.
+This branch replaces the former Supabase implementation with a MERN application. The browser never receives MongoDB or Cloudinary secrets.
 
-These are verified aggregate counts. The source material does **not** provide a verified row for each tree with a unique ID, GPS coordinates, or a complete cross-tabulation of species × zone × condition. GreenMap therefore shows these figures as a survey summary and does not invent 38 individual tree records or map pins. The interactive map only plots individual database records with valid stored coordinates.
+## Survey data integrity
 
-## Tech stack
+The field survey on **20 September 2026** recorded an aggregate total of **38 trees**:
 
-- React and Vite
-- Leaflet / OpenStreetMap
-- Supabase Auth, Postgres and Row Level Security (RLS)
+| Zone | Survey count |
+|---|---:|
+| Main Ground | 10 |
+| Volleyball Ground | 21 |
+| Parking | 7 |
+| Flower Garden | 0 |
+| **Total** | **38** |
 
-## Local development
+Condition counts: **25 Healthy**, **10 Needs Attention**, **3 Uncertain**. The recorded species/common-name category counts are stored in the aggregate summary. Common names reflect field notes; scientific names require independent verification.
 
-1. Install Node.js (LTS recommended).
-2. Install dependencies:
-   ```bash
+The survey summary is separate from individual tree documents. This project does not create 38 fake trees, invented GPS coordinates, or placeholder field photographs. A public tree marker is displayed only for an individually entered record that is verified and has a saved location explicitly checked by an administrator.
+
+## Requirements
+
+- Node.js 20+ recommended (Node 22 is supported by current Vite releases)
+- npm
+- MongoDB Atlas connection string
+- Cloudinary account (required for actual uploads; the rest of the app can be configured without it)
+
+## Local setup — Windows PowerShell
+
+1. Download/clone this branch and open a terminal in the repository root.
+2. Install dependencies from the root:
+
+   ```powershell
    npm install
    ```
-3. Copy `.env.example` to `.env.local` and add the Supabase project URL and **publishable/anon key**.
-4. Start the dev server:
-   ```bash
+
+3. Copy the server environment template:
+
+   ```powershell
+   Copy-Item server/.env.example server/.env
+   notepad server/.env
+   ```
+
+4. Replace placeholders in `server/.env` with your real MongoDB Atlas URI and a unique session secret (32+ characters). Set a username and a new, unique admin password of at least six characters. Add Cloudinary credentials for image upload.
+5. Create the initial admin account:
+
+   ```powershell
+   npm run admin:create
+   ```
+
+   If the account already exists and you need to update its password, set the matching `ADMIN_USERNAME` and new `ADMIN_PASSWORD` in `server/.env` and run `npm run admin:reset`. These scripts require a live Atlas connection. Do not commit `server/.env`; remove `ADMIN_PASSWORD` from it after setup where practical.
+
+6. Import the aggregate summary and the four known zones:
+
+   ```powershell
+   npm run data:import-summary
+   ```
+
+   This is idempotent. It updates the aggregate survey summary and upserts the named zones. It deliberately does **not** populate individual tree documents or GPS coordinates.
+
+7. Start the frontend and API together:
+
+   ```powershell
    npm run dev
    ```
-5. Build the production bundle:
-   ```bash
-   npm run build
-   ```
 
-Never put a Supabase service-role key in a `VITE_*` variable or browser code.
+   Frontend: http://localhost:5173  
+   API health check: http://localhost:5000/api/health
 
-## Supabase setup
+To run individually, use `npm run dev:web` and `npm run dev:api` in separate terminals. The Vite development server proxies `/api` to Express on port 5000.
 
-1. Open the Supabase SQL Editor for your project.
-2. Run `supabase/schema.sql`. This creates the tables and RLS policies and upserts the verified aggregate inventory into `survey_inventory_summary`.
-3. Add an administrator user using Supabase Auth (email/password).
-4. Grant the admin role through a trusted server-side/admin workflow or the Supabase SQL Editor. Example for an existing user, replace the email with the administrator's exact email:
+## Environment
 
-   ```sql
-   update auth.users
-   set raw_app_meta_data =
-     coalesce(raw_app_meta_data, '{}'::jsonb) || '{"role":"admin"}'::jsonb
-   where email = 'admin@example.com';
-   ```
+The backend reads `server/.env`:
 
-   This is a privileged operation. Do not expose service-role credentials in the client, and do not let users set `app_metadata` from browser code. Sign out and sign in again after granting the role so the JWT contains the updated metadata.
+- `MONGO_URL` — your MongoDB Atlas connection string (URL-encode reserved characters in the password)
+- `SESSION_SECRET` — unique random string of at least 32 characters
+- `CLIENT_URL` — browser origin, usually `http://localhost:5173` locally
+- `ADMIN_USERNAME`, `ADMIN_DISPLAY_NAME`, `ADMIN_PASSWORD` — for the setup/reset scripts only
+- `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` — server-side image credentials
+- `PORT` — optional Express port; defaults to 5000
 
-5. In Supabase Auth, keep public sign-up disabled if this is a single-admin academic project, or manage who may register. The client checks `app_metadata.role === "admin"`; database writes are separately protected by RLS through `public.is_greenmap_admin()`.
+Never commit a real `.env`, never expose the MongoDB URI, session secret or Cloudinary API secret in frontend code, and never use secret values in `VITE_*` variables.
 
-## Admin security model
+For a separate static frontend deployment, set `VITE_API_BASE_URL` to the deployed API URL ending in `/api/v1`, and set the backend `CLIENT_URL` to the actual frontend origin. Configure HTTPS and production cookie behavior on both services.
 
-- Without Supabase environment variables, the Admin page is read-only and CRUD is disabled.
-- A signed-in account without trusted `app_metadata.role = "admin"` sees Access denied.
-- RLS policies require the same admin role for tree, green-space, gallery, and survey-summary management.
-- Public visitors can read published records and submit a survey response; survey response contents are not publicly readable.
-- The database permits null GPS coordinates so unverified locations can remain blank. A marker is shown only when both stored coordinates are valid.
-- Never rely on hiding UI controls alone: Supabase RLS is the database authorization boundary.
+## Public and admin functionality
 
-## Important inventory notes
+Public visitors can browse published trees, view the survey summary and charts, explore green spaces/gallery, and submit environmental survey feedback without an account. Survey submissions are not publicly readable.
 
-The aggregate 38-tree summary is not automatically expanded into individual records. When field-level records are verified, an administrator can add them with a unique tree ID, observed condition, zone and optional verified coordinates. Do not infer coordinates from a zone centroid or treat sample photos as field evidence.
+The admin must be provisioned by the server-side script. There is no public registration endpoint. All write APIs require an active admin session and a CSRF token. The admin interface includes tree CRUD, verification, coordinate selection and explicit coordinate confirmation, Cloudinary photo uploads, green-space management, zones, gallery images, survey response review, and audit logs.
 
-## Scripts
+## API overview
 
-- `npm run dev` — local development server
-- `npm run build` — production build
-- `npm run start` — Vite preview server (not an application API server)
-- `npm run lint` — lint configured project files
+Prefix: `/api/v1`
+
+- `GET /auth/csrf`, `GET /auth/me`, `POST /auth/login`, `POST /auth/logout`
+- `GET /trees`, `GET /trees/:id`, admin-only tree create/edit/delete/verification/photo routes
+- `GET /zones`, admin-only zone management
+- `GET /green-spaces`, admin-only create/edit/delete/photo routes
+- `GET /gallery`, admin-only image management
+- `GET /statistics/overview`, `/statistics/by-zone`, `/statistics/by-condition`, `/statistics/by-species`
+- `GET /survey/summary`, `POST /survey/responses`
+- Admin-only `/admin/survey-responses`, `/admin/audit-logs`, and `/admin/dashboard`
+
+## Tests\n\nRun the backend validation and authorization unit tests with:\n\n```powershell\nnpm test\n```\n\nThe tests cover validation rules, unknown coordinates, supported survey zones and the admin access middleware. They do not replace an end-to-end test against a configured Atlas/Cloudinary account.\n\n## Security notes
+
+- Admin auth uses Passport Local and passport-local-mongoose password hashing.
+- Express sessions are stored in MongoDB, use HTTP-only cookies, and are rotated by Passport on login.
+- Mutating requests require a session CSRF token and a compatible origin.
+- Login and survey submission are rate-limited; JSON/request sizes are bounded.
+- Uploaded images are restricted to JPG/PNG/WEBP and 5 MB; credentials are server-only.
+- Do not use a six-character password in production if a longer passphrase is practical. The six-character minimum is retained only because it was explicitly requested.
+- Database validation and unique IDs prevent duplicate tree IDs. Public reads expose only verified tree records; coordinates are separately marked verified.
+
+## Known deployment shape
+
+For a simple Render deployment, use a Node web service for `server/` and a static site for the Vite build. Set the root build command to `npm install && npm run build`, publish directory `dist`, and configure `VITE_API_BASE_URL` to the API service's public URL ending in `/api/v1`. Configure `CLIENT_URL` on the API service with the static site's exact origin. Both services must use HTTPS.
+
+## License / project
+
+Academic campus documentation project. Field counts are based on the stated field survey; no claim is made that all trees have individually verified taxonomic names or coordinates.

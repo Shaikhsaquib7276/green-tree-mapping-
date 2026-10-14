@@ -1,0 +1,33 @@
+const express=require('express')
+const mongoose=require('mongoose')
+const Joi=require('joi')
+const CampusZone=require('../models/CampusZone')
+const Tree=require('../models/Tree')
+const requireAdmin=require('../middleware/requireAdmin')
+const {recordAudit}=require('../services/auditService')
+const router=express.Router()
+const asyncRoute=fn=>(req,res,next)=>Promise.resolve(fn(req,res,next)).catch(next)
+const schema=Joi.object({name:Joi.string().trim().min(2).max(100).required(),description:Joi.string().max(1000).allow('').default(''),sortOrder:Joi.number().integer().min(0).max(10000).default(0)}).unknown(false)
+function slugify(s){return s.toLowerCase().trim().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')}
+router.get('/',asyncRoute(async(req,res)=>{const filter=req.user?{}:{isActive:true};const items=await CampusZone.find(filter).sort({sortOrder:1,name:1}).lean();res.json({items})}))
+router.post('/',requireAdmin,asyncRoute(async(req,res)=>{
+ const {error,value}=schema.validate(req.body);if(error)return res.status(400).json({success:false,error:{message:error.details[0].message}})
+ const zone=await CampusZone.create({...value,slug:slugify(value.name),isActive:true})
+ await recordAudit({actor:req.user,action:'create',entityType:'CampusZone',entityId:zone.id})
+ res.status(201).json({success:true,item:zone})
+}))
+router.patch('/:id',requireAdmin,asyncRoute(async(req,res)=>{
+ if(!mongoose.isValidObjectId(req.params.id))return res.status(400).json({success:false,error:{message:'Invalid zone ID.'}})
+ const {error,value}=schema.validate(req.body);if(error)return res.status(400).json({success:false,error:{message:error.details[0].message}})
+ const zone=await CampusZone.findByIdAndUpdate(req.params.id,{...value,slug:slugify(value.name)},{new:true,runValidators:true})
+ if(!zone)return res.status(404).json({success:false,error:{message:'Zone not found.'}})
+ await recordAudit({actor:req.user,action:'update',entityType:'CampusZone',entityId:zone.id})
+ res.json({success:true,item:zone})
+}))
+router.delete('/:id',requireAdmin,asyncRoute(async(req,res)=>{
+ const zone=await CampusZone.findById(req.params.id);if(!zone)return res.status(404).json({success:false,error:{message:'Zone not found.'}})
+ const [trees,count]=await Promise.all([Tree.countDocuments({zone:zone._id}),require('../models/GreenSpace').countDocuments({zone:zone._id})])
+ if(trees||count)return res.status(409).json({success:false,error:{message:'This zone is still linked to tree records or green spaces. Reassign them first.'}})
+ await zone.deleteOne();await recordAudit({actor:req.user,action:'delete',entityType:'CampusZone',entityId:zone.id});res.json({success:true})
+}))
+module.exports=router

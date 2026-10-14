@@ -1,0 +1,17 @@
+const express=require('express')
+const rateLimit=require('express-rate-limit')
+const SurveyResponse=require('../models/SurveyResponse')
+const SurveySummary=require('../models/SurveySummary')
+const {surveyResponseSchema}=require('../validators/surveyValidator')
+const {recordAudit}=require('../services/auditService')
+const router=express.Router()
+const asyncRoute=fn=>(req,res,next)=>Promise.resolve(fn(req,res,next)).catch(next)
+const surveyLimiter=rateLimit({windowMs:60*60*1000,limit:30,standardHeaders:true,legacyHeaders:false,message:{success:false,error:{code:'SURVEY_RATE_LIMIT',message:'Too many submissions from this connection. Try again later.'}}})
+router.get('/summary',asyncRoute(async(req,res)=>{const summary=await SurveySummary.findOne({projectKey:'theem-campus-2026'}).lean();res.json({summary:summary||null})}))
+router.post('/responses',surveyLimiter,asyncRoute(async(req,res)=>{
+ const {error,value}=surveyResponseSchema.validate(req.body,{abortEarly:false,convert:true})
+ if(error)return res.status(400).json({success:false,error:{code:'VALIDATION_ERROR',message:error.details[0].message}})
+ const item=await SurveyResponse.create(value)
+ res.status(201).json({success:true,message:'Your response has been saved.',id:item.id})
+}))
+module.exports=router

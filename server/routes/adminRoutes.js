@@ -1,0 +1,13 @@
+const express=require('express')
+const AuditLog=require('../models/AuditLog')
+const SurveyResponse=require('../models/SurveyResponse')
+const requireAdmin=require('../middleware/requireAdmin')
+const {recordAudit}=require('../services/auditService')
+const router=express.Router()
+const asyncRoute=fn=>(req,res,next)=>Promise.resolve(fn(req,res,next)).catch(next)
+router.use(requireAdmin)
+router.get('/survey-responses',asyncRoute(async(req,res)=>{const page=Math.max(1,Number.parseInt(req.query.page,10)||1);const limit=Math.min(100,Math.max(1,Number.parseInt(req.query.limit,10)||50));const [items,total]=await Promise.all([SurveyResponse.find().sort({createdAt:-1}).skip((page-1)*limit).limit(limit).lean(),SurveyResponse.countDocuments()]);res.json({items,total,page,limit})}))
+router.patch('/survey-responses/:id',asyncRoute(async(req,res)=>{const item=await SurveyResponse.findByIdAndUpdate(req.params.id,{status:req.body.status},{new:true,runValidators:true});if(!item)return res.status(404).json({success:false,error:{message:'Survey response not found.'}});await recordAudit({actor:req.user,action:'update',entityType:'SurveyResponse',entityId:item.id,details:{status:item.status}});res.json({success:true,item})}))
+router.delete('/survey-responses/:id',asyncRoute(async(req,res)=>{const item=await SurveyResponse.findById(req.params.id);if(!item)return res.status(404).json({success:false,error:{message:'Survey response not found.'}});await item.deleteOne();await recordAudit({actor:req.user,action:'delete',entityType:'SurveyResponse',entityId:item.id});res.json({success:true})}))
+router.get('/audit-logs',asyncRoute(async(req,res)=>{const limit=Math.min(100,Math.max(1,Number.parseInt(req.query.limit,10)||50));res.json({items:await AuditLog.find().populate('actor','username displayName').sort({createdAt:-1}).limit(limit).lean()})}))
+module.exports=router
