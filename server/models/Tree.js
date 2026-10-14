@@ -1,5 +1,9 @@
 const mongoose=require('mongoose')
 const PhotoSchema=new mongoose.Schema({url:{type:String,required:true},publicId:{type:String,required:true},altText:{type:String,trim:true,maxlength:180,default:''},uploadedAt:{type:Date,default:Date.now}})
+const GeoJSONPointSchema=new mongoose.Schema({
+ type:{type:String,enum:['Point'],required:true},
+ coordinates:{type:[Number],required:true,validate:{validator:v=>Array.isArray(v)&&v.length===2,message:'GeoJSON coordinates must be [longitude, latitude].'}}
+},{_id:false})
 const TreeSchema=new mongoose.Schema({
  treeId:{type:String,required:true,unique:true,trim:true,uppercase:true,maxlength:50},
  commonName:{type:String,required:true,trim:true,maxlength:120},
@@ -7,7 +11,7 @@ const TreeSchema=new mongoose.Schema({
  scientificNameVerified:{type:Boolean,default:false},
  zone:{type:mongoose.Schema.Types.ObjectId,ref:'CampusZone',default:null},
  condition:{type:String,enum:['healthy','needs_attention','uncertain'],default:'uncertain'},
- location:{type:{type:String,enum:['Point']},coordinates:{type:[Number],validate:{validator:v=>!v||v.length===2,message:'GeoJSON coordinates must be [longitude, latitude].'}},default:null},
+ location:{type:GeoJSONPointSchema,default:null},
  locationVerified:{type:Boolean,default:false},photos:{type:[PhotoSchema],default:[]},
  notes:{type:String,trim:true,maxlength:3000,default:''},
  verificationStatus:{type:String,enum:['pending','verified','rejected'],default:'pending'},
