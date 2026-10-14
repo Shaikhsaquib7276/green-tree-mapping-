@@ -11,7 +11,7 @@ async function main(){
   const admin=await Admin.findOne({username:username.toLowerCase()})
   if(!admin)throw new Error('Admin username was not found. Run npm run admin:create first.')
   await new Promise((resolve,reject)=>admin.setPassword(password,error=>error?reject(error):resolve()))
-  admin.isActive=true
+  // Do not reactivate a disabled account as a side effect of resetting its password.
   if(process.env.ADMIN_DISPLAY_NAME)admin.displayName=process.env.ADMIN_DISPLAY_NAME
   await admin.save()
   console.log(`Password reset for "${username}". Remove ADMIN_PASSWORD from server/.env after verifying login.`)
