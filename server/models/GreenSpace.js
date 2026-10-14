@@ -1,8 +1,12 @@
 const mongoose=require('mongoose')
+const GeoJSONPointSchema=new mongoose.Schema({
+ type:{type:String,enum:['Point'],required:true},
+ coordinates:{type:[Number],required:true,validate:{validator:v=>Array.isArray(v)&&v.length===2,message:'GeoJSON coordinates must be [longitude, latitude].'}}
+},{_id:false})
 const GreenSpaceSchema=new mongoose.Schema({
  name:{type:String,required:true,trim:true,maxlength:140},description:{type:String,trim:true,maxlength:2000,default:''},
  zone:{type:mongoose.Schema.Types.ObjectId,ref:'CampusZone',default:null},
- location:{type:{type:String,enum:['Point']},coordinates:{type:[Number]},default:null},locationVerified:{type:Boolean,default:false},
+ location:{type:GeoJSONPointSchema,default:null},locationVerified:{type:Boolean,default:false},
  photos:[{url:{type:String,required:true},publicId:{type:String,required:true},altText:{type:String,default:''}}],
  status:{type:String,enum:['draft','published'],default:'published'},
  createdBy:{type:mongoose.Schema.Types.ObjectId,ref:'Admin',default:null},updatedBy:{type:mongoose.Schema.Types.ObjectId,ref:'Admin',default:null}
