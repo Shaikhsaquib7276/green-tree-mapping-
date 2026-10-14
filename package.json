@@ -1,23 +1,32 @@
 {
-  "name": "cep",
+  "name": "greenmap",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
+  "workspaces": [
+    "server"
+  ],
   "scripts": {
-    "dev": "vite",
+    "setup": "npm install",
+    "dev": "node scripts/dev.mjs",
+    "dev:web": "vite --host 0.0.0.0",
+    "dev:api": "npm run dev --workspace=greenmap-server",
     "build": "vite build",
-    "start": "node scripts/serve.mjs",
+    "start": "node server/index.js",
+    "preview": "vite preview",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "admin:create": "npm run admin:create --workspace=greenmap-server",
+    "admin:reset": "npm run admin:reset --workspace=greenmap-server",
+    "data:import-summary": "npm run data:import-summary --workspace=greenmap-server",
+    "test": "npm test --workspace=greenmap-server"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.116.0",
-    "@types/leaflet": "^1.9.22",
     "leaflet": "^1.9.4",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },
   "devDependencies": {
+    "@types/leaflet": "^1.9.22",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^6.1.0",
