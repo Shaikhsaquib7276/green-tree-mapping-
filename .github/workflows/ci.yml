@@ -1,12 +1,9 @@
 name: GreenMap validation
 on:
   push:
-    branches:
-      - main
-      - feature/greenmap-mern-rebuild
+    branches: [main, feature/greenmap-mern-rebuild]
   pull_request:
-    branches:
-      - main
+    branches: [main]
 jobs:
   validate:
     runs-on: ubuntu-latest
@@ -15,6 +12,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
       - run: npm install
       - run: npm test
       - run: npm run build

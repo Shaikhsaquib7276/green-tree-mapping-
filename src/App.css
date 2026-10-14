@@ -207,3 +207,8 @@ textarea,input:not([type="radio"]):not([type="file"]):not([type="checkbox"]){min
 .gallery-filters{display:flex;align-items:center;flex-wrap:wrap;gap:7px;margin:0 0 22px}
 .gallery-filters button{border:1px solid #e0e7dc;background:#fff;border-radius:999px;padding:9px 13px;color:#748075;font-size:11px;font-weight:700}
 .gallery-filters button:hover,.gallery-filters button.selected{background:#e7f0e1;border-color:#b7ceb0;color:var(--forest)}
+
+.pagination{display:flex;align-items:center;justify-content:center;gap:15px;margin:28px 0 0;color:#758176;font-size:11px}
+.pagination button{border:1px solid #dce5d8;background:#fff;border-radius:9px;padding:9px 13px;color:var(--forest);font-size:11px;font-weight:700}
+.pagination button:hover:not(:disabled){background:#eaf2e5;border-color:#b4c9ad}
+.pagination button:disabled{opacity:.45;cursor:not-allowed}
