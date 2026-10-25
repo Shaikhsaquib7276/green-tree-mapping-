@@ -81,8 +81,10 @@ router.post('/:id/photos',requireAdmin,upload.single('image'),asyncRoute(async(r
  if(!req.file)return res.status(400).json({success:false,error:{message:'Choose an image file.'}})
  const tree=await Tree.findById(req.params.id)
  if(!tree)return res.status(404).json({success:false,error:{message:'Tree record not found.'}})
+ const {error,value}=Joi.object({altText:Joi.string().trim().max(180).allow('').default('')}).validate(req.body)
+ if(error)return res.status(400).json({success:false,error:{message:'Photo alt text must be 180 characters or fewer.'}})
  const image=await uploadBuffer(req.file.buffer,'greenmap/trees')
- tree.photos.push({url:image.url,publicId:image.publicId,altText:tree.commonName})
+ tree.photos.push({url:image.url,publicId:image.publicId,altText:value.altText||tree.commonName})
  tree.updatedBy=req.user._id
  await tree.save()
  await recordAudit({actor:req.user,action:'photo_upload',entityType:'Tree',entityId:tree.id,details:{publicId:image.publicId}})

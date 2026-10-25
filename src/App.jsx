@@ -69,6 +69,8 @@ function Icon({ name, size = 18 }) {
   const paths = {
     leaf: <><path d="M20 4c-8 0-14 4-14 11a5 5 0 0 0 5 5C18 20 20 12 20 4Z"/><path d="M4 21c2-5 5-8 11-11"/></>,
     menu: <><path d="M4 7h16M4 12h16M4 17h16"/></>,
+    moon: <><path d="M20.5 14.3A8.5 8.5 0 0 1 9.7 3.5 8.5 8.5 0 1 0 20.5 14.3Z"/></>,
+    sun: <><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.65 17.65l1.42 1.42M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.65 6.35l1.42-1.42"/></>,
     arrow: <><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></>,
     pin: <><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></>,
     tree: <><path d="M12 22v-7"/><path d="m8 15 4-5 4 5"/><path d="m5 11 7-8 7 8a3 3 0 0 1-2.2 5H7.2A3 3 0 0 1 5 11Z"/></>,
@@ -194,6 +196,7 @@ function App() {
   const initialRoute = () => (window.location.hash.replace(/^#\/?/, '') || 'home').split('/')[0]
   const [page, setPage] = useState(initialRoute)
   const [mobileNav, setMobileNav] = useState(false)
+  const [theme, setTheme] = useState(() => { try { return localStorage.getItem('greenmap-theme') === 'dark' ? 'dark' : 'light' } catch { return 'light' } })
   const [summary, setSummary] = useState(null)
   const [trees, setTrees] = useState([])
   const [treeTotal, setTreeTotal] = useState(0)
@@ -217,7 +220,7 @@ function App() {
   const [adminError, setAdminError] = useState('')
   const [editingTree, setEditingTree] = useState(null)
   const [locationPicker, setLocationPicker] = useState(false)
-  const [treeForm, setTreeForm] = useState({ treeId: '', commonName: '', scientificName: '', zone: '', condition: 'healthy', notes: '', latitude: '', longitude: '', locationVerified: false })
+  const [treeForm, setTreeForm] = useState({ treeId: '', commonName: '', scientificName: '', zone: '', condition: 'healthy', notes: '', latitude: '', longitude: '', locationVerified: false, photoAltText: '' })
   const [surveyForm, setSurveyForm] = useState({ ageGroup: '', zone: '', awareness: '', greenSpaceImportance: '', treeCareAwareness: '', participationInterest: '', suggestions: '' })
 
   const go = useCallback((next, replace = false) => {
@@ -235,7 +238,7 @@ function App() {
       ])
       if (overview.status === 'fulfilled') setSummary(overview.value.summary || null)
       if (treeList.status === 'fulfilled') { setTrees(treeList.value.items || []); setTreeTotal(treeList.value.total || 0) }
-      if (zoneList.status === 'fulfilled' && zoneList.value.items?.length) setZones(zoneList.value.items)
+      if (zoneList.status === 'fulfilled') setZones(zoneList.value.items || [])
       if (spaceList.status === 'fulfilled') setSpaces(spaceList.value.items || [])
       if (galleryList.status === 'fulfilled') setGallery(galleryList.value.items || [])
       if (me.status === 'fulfilled') setSessionUser(me.value.user || null)
@@ -255,39 +258,44 @@ function App() {
     return () => window.removeEventListener('popstate', onPopState)
   }, [loadAll])
 
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+    try { localStorage.setItem('greenmap-theme', theme) } catch { /* storage may be unavailable */ }
+  }, [theme])
+
   const individualMapped = useMemo(() => trees.filter(t => t.verificationStatus === 'verified' && t.locationVerified === true && Array.isArray(t.location?.coordinates) && t.location.coordinates.length === 2 && t.location.coordinates.every(Number.isFinite)).length, [trees])
-  const aggregate = summary || SURVEY
-  const surveyTotal = aggregate?.totalTrees ?? SURVEY.totalTrees
+  const aggregate = summary || (apiReady ? null : SURVEY)
+  const surveyTotal = aggregate?.totalTrees ?? (apiReady ? 0 : SURVEY.totalTrees)
   const surveyDate = aggregate?.surveyDate
     ? new Date(aggregate.surveyDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
-    : SURVEY.date
-  const surveyZones = Array.isArray(aggregate?.zoneCounts) && aggregate.zoneCounts.length
+    : (apiReady ? 'Not set' : SURVEY.date)
+  const surveyZones = Array.isArray(aggregate?.zoneCounts)
     ? aggregate.zoneCounts.map(zone => ({
         ...zone,
         color: SURVEY.zones.find(item => item.name === zone.name)?.color || '#5b9d6b',
       }))
-    : SURVEY.zones
+    : (aggregate ? SURVEY.zones : [])
   const surveyConditions = aggregate?.conditionCounts && !Array.isArray(aggregate.conditionCounts)
     ? [
         { name: 'Healthy', count: aggregate.conditionCounts.healthy ?? 0, color: '#4d9a6b' },
         { name: 'Needs attention', count: aggregate.conditionCounts.needsAttention ?? 0, color: '#d6a14d' },
         { name: 'Uncertain', count: aggregate.conditionCounts.uncertain ?? 0, color: '#9ba8a1' },
       ]
-    : SURVEY.conditions
-  const surveySpecies = Array.isArray(aggregate?.speciesCounts) && aggregate.speciesCounts.length
+    : (aggregate ? SURVEY.conditions : [{ name: 'Healthy', count: 0, color: '#4d9a6b' }, { name: 'Needs attention', count: 0, color: '#d6a14d' }, { name: 'Uncertain', count: 0, color: '#9ba8a1' }])
+  const surveySpecies = Array.isArray(aggregate?.speciesCounts)
     ? aggregate.speciesCounts.map(item => ({ name: item.name, count: item.count }))
-    : SURVEY.species.map(([name, count]) => ({ name, count }))
+    : (aggregate ? SURVEY.species.map(([name, count]) => ({ name, count })) : [])
 
   const storedTreeCount = aggregate?.counts?.storedTreeCount ?? treeTotal
   const verifiedTreeCount = aggregate?.counts?.verifiedTreeCount ?? trees.filter(t => t.verificationStatus === 'verified').length
   const title = ({ home: 'A living record of campus nature', map: 'Explore the green cover', trees: 'Tree catalogue', detail: activeTree?.commonName || 'Tree details', statistics: 'The story in the numbers', spaces: 'Campus green spaces', gallery: 'Field notes in pictures', survey: 'Your voice, greener campus', about: 'A small step toward a greener campus', admin: 'Admin workspace' })[page] || 'GreenMap'
 
   const openTree = tree => { setActiveTree(tree); go('detail') }
-  const resetTreeForm = () => { setEditingTree(null); setTreeForm({ treeId: '', commonName: '', scientificName: '', zone: zones[0]?._id || '', condition: 'healthy', notes: '', latitude: '', longitude: '' }); setLocationPicker(false) }
+  const resetTreeForm = () => { setEditingTree(null); setTreeForm({ treeId: '', commonName: '', scientificName: '', zone: zones[0]?._id || '', condition: 'healthy', notes: '', latitude: '', longitude: '', locationVerified: false, photoAltText: '' }); setLocationPicker(false) }
   const editTree = tree => {
     const coords = tree.location?.coordinates
     setEditingTree(tree)
-    setTreeForm({ treeId: tree.treeId || '', commonName: tree.commonName || '', scientificName: tree.scientificName || '', zone: tree.zone?._id || tree.zone || '', condition: tree.condition || 'healthy', notes: tree.notes || '', latitude: coords ? String(coords[1]) : '', longitude: coords ? String(coords[0]) : '', locationVerified: Boolean(tree.locationVerified) })
+    setTreeForm({ treeId: tree.treeId || '', commonName: tree.commonName || '', scientificName: tree.scientificName || '', zone: tree.zone?._id || tree.zone || '', condition: tree.condition || 'healthy', notes: tree.notes || '', latitude: coords ? String(coords[1]) : '', longitude: coords ? String(coords[0]) : '', locationVerified: Boolean(tree.locationVerified), photoAltText: tree.photos?.[0]?.altText || tree.commonName || '' })
     setLocationPicker(false)
     setAdminMessage('')
     setAdminError('')
@@ -323,7 +331,7 @@ function App() {
       let saved = result.tree
       const file = event.currentTarget.querySelector('input[type="file"]')?.files?.[0]
       if (file && saved?._id) {
-        const formData = new FormData(); formData.append('image', file)
+        const formData = new FormData(); formData.append('image', file); formData.append('altText', data.photoAltText || data.commonName)
         const imageResult = await request(`/trees/${saved._id}/photos`, { method: 'POST', body: formData })
         saved = imageResult.tree || saved
       }
@@ -366,7 +374,7 @@ function App() {
 
   const bar = (items, maxValue) => <div className="bar-list">{items.map(item => <div className="bar-row" key={item.name}><div className="bar-label"><span>{item.name}</span><strong>{item.count}</strong></div><div className="bar-track"><span style={{ width: `${maxValue ? (item.count / maxValue) * 100 : 0}%`, background: item.color || 'var(--green-600)' }} /></div></div>)}</div>
 
-  const header = <header className="site-header"><button className="brand" onClick={() => go('home')} aria-label="GreenMap home"><span className="brand-mark"><Icon name="leaf" size={24}/></span><span className="brand-copy"><b>green<span>map</span></b><small>FIELD NOTES / 2026</small></span></button><nav className={`nav-links ${mobileNav ? 'is-open' : ''}`} aria-label="Main navigation">{NAV.map(([key, label]) => <button key={key} className={page === key ? 'active' : ''} onClick={() => go(key)}>{label}</button>)}</nav><div className="header-actions"><button className="admin-link" onClick={() => go('admin')}><Icon name="shield" size={16}/><span>{sessionUser ? 'Admin area' : 'Admin login'}</span></button><button className="mobile-toggle" onClick={() => setMobileNav(!mobileNav)} aria-label="Toggle navigation"><Icon name={mobileNav ? 'close' : 'menu'} size={22}/></button></div></header>
+  const header = <header className="site-header"><button className="brand" onClick={() => go('home')} aria-label="GreenMap home"><span className="brand-mark"><Icon name="leaf" size={24}/></span><span className="brand-copy"><b>green<span>map</span></b><small>FIELD NOTES / 2026</small></span></button><nav className={`nav-links ${mobileNav ? 'is-open' : ''}`} aria-label="Main navigation">{NAV.map(([key, label]) => <button key={key} className={page === key ? 'active' : ''} onClick={() => go(key)}>{label}</button>)}</nav><div className="header-actions"><button className="theme-toggle" onClick={() => setTheme(current => current === 'dark' ? 'light' : 'dark')} aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`} title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}><Icon name={theme === 'dark' ? 'sun' : 'moon'} size={16}/><span>{theme === 'dark' ? 'Light' : 'Dark'}</span></button><button className="admin-link" onClick={() => go('admin')}><Icon name="shield" size={16}/><span>{sessionUser ? 'Admin area' : 'Admin login'}</span></button><button className="mobile-toggle" onClick={() => setMobileNav(!mobileNav)} aria-label="Toggle navigation"><Icon name={mobileNav ? 'close' : 'menu'} size={22}/></button></div></header>
 
   return <div className="app-shell">
     {header}
@@ -396,9 +404,106 @@ function App() {
 
       {page === 'about' && <section className="content-page about-page"><div className="about-heading"><span className="section-kicker">ABOUT THE PROJECT</span><h1>{title}</h1><p>GreenMap is a digital field notebook for campus trees and green-cover documentation at Theem College of Engineering, Betegaon, Chilhar Road.</p></div><div className="about-grid"><article><span>01</span><Icon name="tree" size={24}/><h2>Record honestly</h2><p>The survey summary records {surveyTotal} trees. Tree-level details appear only when real individual records are entered into the database.</p></article><article><span>02</span><Icon name="pin" size={24}/><h2>Map what is known</h2><p>Map markers require actual saved coordinates. Unknown locations remain unknown rather than being estimated from a zone name.</p></article><article><span>03</span><Icon name="shield" size={24}/><h2>Keep data accountable</h2><p>Only authorized administrators can create, verify, edit or remove official tree records. Public survey feedback is private.</p></article></div><div className="survey-caveat"><b>Field inventory note</b><p>Survey date: {surveyDate}. Condition totals: {surveyConditions.map(item => `${item.count} ${item.name.toLowerCase()}`).join(', ')}. Common names were recorded from field notes; scientific names require independent verification.</p></div></section>}
 
-      {page === 'admin' && <section className="content-page admin-page"><div className="page-heading admin-page-heading"><div><span className="section-kicker">GREENMAP / SECURE AREA</span><h1>{sessionUser ? 'Admin workspace' : 'Authorized access only'}</h1><p>{sessionUser ? 'Manage individually recorded trees, campus spaces and field documentation.' : 'Sign in to manage verified tree records, campus zones and field documentation.'}</p></div>{sessionUser && <button className="button button-outline" onClick={logout}>Sign out</button>}</div>{!sessionUser ? <form className="login-card" onSubmit={submitLogin}><div className="login-lock"><Icon name="lock" size={25}/></div><span className="section-kicker">PROTECTED ADMIN SESSION</span><h2>Welcome back.</h2><p>Use the administrator account provisioned on the server. Public registration is disabled.</p><label>Admin username<input name="username" autoComplete="username" required placeholder="Username"/></label><label>Password<input name="password" type="password" autoComplete="current-password" minLength="6" required placeholder="Password"/></label>{loginError && <p className="form-error" role="alert">{loginError}</p>}<button className="button button-primary button-full" disabled={loginBusy}>{loginBusy ? 'Signing in…' : 'Sign in securely'} <Icon name="arrow" size={16}/></button><p className="form-privacy">Only a provisioned active administrator can sign in.</p></form> : <><div className="admin-tabs">{[['trees','Tree records'],['spaces','Green spaces'],['gallery','Gallery'],['responses','Survey responses'],['zones','Campus zones'],['logs','Audit log']].map(([v,label]) => <button key={v} className={adminTab === v ? 'selected' : ''} onClick={() => {setAdminTab(v); setAdminMessage('');setAdminError('')}}>{label}</button>)}</div>{adminTab === 'trees' && <div className="admin-workgrid"><form className="admin-form" onSubmit={saveTree}><div className="form-heading"><div><span className="section-kicker">{editingTree ? 'EDIT RECORD' : 'NEW INDIVIDUAL RECORD'}</span><h2>{editingTree ? 'Update tree details' : 'Add a tree'}</h2></div>{editingTree && <button type="button" className="text-button" onClick={resetTreeForm}>Cancel edit</button>}</div><div className="form-two"><label>Tree ID<input value={treeForm.treeId} required onChange={e=>setTreeForm({...treeForm,treeId:e.target.value})} placeholder="e.g. TG-001"/></label><label>Common name<input value={treeForm.commonName} required onChange={e=>setTreeForm({...treeForm,commonName:e.target.value})} placeholder="Recorded name"/></label></div><label>Scientific name <span className="optional-label">If verified</span><input value={treeForm.scientificName} onChange={e=>setTreeForm({...treeForm,scientificName:e.target.value})} placeholder="Leave blank if unknown"/></label><div className="form-two"><label>Zone<select value={treeForm.zone} onChange={e=>setTreeForm({...treeForm,zone:e.target.value})}><option value="">Not assigned</option>{zones.map(z=><option key={z._id||z.slug} value={z._id||z.slug}>{z.name}</option>)}</select></label><label>Observed condition<select value={treeForm.condition} onChange={e=>setTreeForm({...treeForm,condition:e.target.value})}><option value="healthy">Healthy</option><option value="needs_attention">Needs attention</option><option value="uncertain">Uncertain</option></select></label></div><div className="form-two"><label>Latitude<input inputMode="decimal" value={treeForm.latitude} onChange={e=>setTreeForm({...treeForm,latitude:e.target.value})} placeholder="Optional"/></label><label>Longitude<input inputMode="decimal" value={treeForm.longitude} onChange={e=>setTreeForm({...treeForm,longitude:e.target.value})} placeholder="Optional"/></label></div><label className="verification-check"><input type="checkbox" checked={Boolean(treeForm.locationVerified)} onChange={e=>setTreeForm({...treeForm,locationVerified:e.target.checked})}/> I have checked these exact GPS coordinates against the field location.</label><button type="button" className="button button-outline button-full" onClick={()=>setLocationPicker(!locationPicker)}><Icon name="pin" size={16}/>{locationPicker ? 'Hide location picker' : 'Choose location on map'}</button>{locationPicker && <LeafletMap trees={[]} editable selectedLocation={treeForm.latitude && treeForm.longitude ? {lat:Number(treeForm.latitude),lng:Number(treeForm.longitude)} : null} onPick={point=>setTreeForm({...treeForm,latitude:String(point.lat),longitude:String(point.lng)})}/>}<label>Field notes<textarea rows="3" value={treeForm.notes} onChange={e=>setTreeForm({...treeForm,notes:e.target.value})} placeholder="Observations, source, maintenance needs…"/></label><label>Tree photograph <span className="optional-label">JPG, PNG or WEBP · up to 5 MB</span><input type="file" accept="image/jpeg,image/png,image/webp"/></label>{adminError && <p className="form-error" role="alert">{adminError}</p>}{adminMessage && <p className="form-success" role="status">{adminMessage}</p>}<button className="button button-primary button-full" type="submit"><Icon name="plus" size={16}/>{editingTree ? 'Save changes' : 'Create pending record'}</button></form><div className="admin-records"><div className="section-heading"><div><span className="section-kicker">INVENTORY ADMIN</span><h2>Individual tree records</h2></div><span className="chart-total">{trees.length}</span></div>{trees.length ? <div className="record-list">{trees.map(tree=><article className="record-row" key={tree._id}><span className="record-tree-icon"><Icon name="tree" size={19}/></span><div className="record-main"><b>{tree.commonName}</b><small>{tree.treeId} · {tree.zone?.name || 'No zone'}</small><span className={`record-status ${tree.verificationStatus}`}>{tree.verificationStatus || 'pending'}</span></div><div className="record-actions"><button title="Edit record" onClick={()=>editTree(tree)}>Edit</button>{tree.verificationStatus !== 'verified' && <button title="Verify and publish" onClick={()=>verifyTree(tree,'verified')}>Verify</button>}<button title="Delete record" className="danger-action" onClick={()=>deleteTree(tree)}>Delete</button></div></article>)}</div> : <EmptyState title="No individual records yet" text="Add a tree from the actual field survey. The aggregate count of 38 is not auto-expanded into invented records."/>}</div></div>}{adminTab === 'spaces' && <AdminSpaces spaces={spaces} zones={zones} refresh={loadAll} report={setAdminMessage} error={setAdminError} adminMessage={adminMessage} adminError={adminError}/ >}{adminTab === 'zones' && <AdminZones zones={zones} refresh={loadAll} report={setAdminMessage} error={setAdminError} adminMessage={adminMessage} adminError={adminError}/ >}{adminTab === 'logs' && <AuditLogPanel/>}{adminTab === 'gallery' && <AdminGallery gallery={gallery} refresh={loadAll} report={setAdminMessage} error={setAdminError} adminMessage={adminMessage} adminError={adminError}/ >}{adminTab === 'responses' && <SurveyResponses/>}</>}</section>}
+      {page === 'admin' && <section className="content-page admin-page"><div className="page-heading admin-page-heading"><div><span className="section-kicker">GREENMAP / SECURE AREA</span><h1>{sessionUser ? 'Admin workspace' : 'Authorized access only'}</h1><p>{sessionUser ? 'Manage individually recorded trees, campus spaces and field documentation.' : 'Sign in to manage verified tree records, campus zones and field documentation.'}</p></div>{sessionUser && <button className="button button-outline" onClick={logout}>Sign out</button>}</div>{!sessionUser ? <form className="login-card" onSubmit={submitLogin}><div className="login-lock"><Icon name="lock" size={25}/></div><span className="section-kicker">PROTECTED ADMIN SESSION</span><h2>Welcome back.</h2><p>Use the administrator account provisioned on the server. Public registration is disabled.</p><label>Admin username<input name="username" autoComplete="username" required placeholder="Username"/></label><label>Password<input name="password" type="password" autoComplete="current-password" minLength="6" required placeholder="Password"/></label>{loginError && <p className="form-error" role="alert">{loginError}</p>}<button className="button button-primary button-full" disabled={loginBusy}>{loginBusy ? 'Signing in…' : 'Sign in securely'} <Icon name="arrow" size={16}/></button><p className="form-privacy">Only a provisioned active administrator can sign in.</p></form> : <><div className="admin-tabs">{[['trees','Tree records'],['spaces','Green spaces'],['gallery','Gallery'],['responses','Survey responses'],['zones','Campus zones'],['summary','Survey summary'],['logs','Audit log'],['reset','Reset content']].map(([v,label]) => <button key={v} className={adminTab === v ? 'selected' : ''} onClick={() => {setAdminTab(v); setAdminMessage('');setAdminError('')}}>{label}</button>)}</div>{adminTab === 'trees' && <div className="admin-workgrid"><form className="admin-form" onSubmit={saveTree}><div className="form-heading"><div><span className="section-kicker">{editingTree ? 'EDIT RECORD' : 'NEW INDIVIDUAL RECORD'}</span><h2>{editingTree ? 'Update tree details' : 'Add a tree'}</h2></div>{editingTree && <button type="button" className="text-button" onClick={resetTreeForm}>Cancel edit</button>}</div><div className="form-two"><label>Tree ID<input value={treeForm.treeId} required onChange={e=>setTreeForm({...treeForm,treeId:e.target.value})} placeholder="e.g. TG-001"/></label><label>Common name<input value={treeForm.commonName} required onChange={e=>setTreeForm({...treeForm,commonName:e.target.value})} placeholder="Recorded name"/></label></div><label>Scientific name <span className="optional-label">If verified</span><input value={treeForm.scientificName} onChange={e=>setTreeForm({...treeForm,scientificName:e.target.value})} placeholder="Leave blank if unknown"/></label><div className="form-two"><label>Zone<select value={treeForm.zone} onChange={e=>setTreeForm({...treeForm,zone:e.target.value})}><option value="">Not assigned</option>{zones.map(z=><option key={z._id||z.slug} value={z._id||z.slug}>{z.name}</option>)}</select></label><label>Observed condition<select value={treeForm.condition} onChange={e=>setTreeForm({...treeForm,condition:e.target.value})}><option value="healthy">Healthy</option><option value="needs_attention">Needs attention</option><option value="uncertain">Uncertain</option></select></label></div><div className="form-two"><label>Latitude<input inputMode="decimal" value={treeForm.latitude} onChange={e=>setTreeForm({...treeForm,latitude:e.target.value})} placeholder="Optional"/></label><label>Longitude<input inputMode="decimal" value={treeForm.longitude} onChange={e=>setTreeForm({...treeForm,longitude:e.target.value})} placeholder="Optional"/></label></div><label className="verification-check"><input type="checkbox" checked={Boolean(treeForm.locationVerified)} onChange={e=>setTreeForm({...treeForm,locationVerified:e.target.checked})}/> I have checked these exact GPS coordinates against the field location.</label><button type="button" className="button button-outline button-full" onClick={()=>setLocationPicker(!locationPicker)}><Icon name="pin" size={16}/>{locationPicker ? 'Hide location picker' : 'Choose location on map'}</button>{locationPicker && <LeafletMap trees={[]} editable selectedLocation={treeForm.latitude && treeForm.longitude ? {lat:Number(treeForm.latitude),lng:Number(treeForm.longitude)} : null} onPick={point=>setTreeForm({...treeForm,latitude:String(point.lat),longitude:String(point.lng)})}/>}<label>Field notes<textarea rows="3" value={treeForm.notes} onChange={e=>setTreeForm({...treeForm,notes:e.target.value})} placeholder="Observations, source, maintenance needs…"/></label><label>Photo description (alt text)<input value={treeForm.photoAltText} onChange={e=>setTreeForm({...treeForm,photoAltText:e.target.value})} maxLength="180" placeholder="Describe the tree photo for accessibility"/></label><label>Tree photograph <span className="optional-label">JPG, PNG or WEBP · up to 5 MB</span><input type="file" accept="image/jpeg,image/png,image/webp"/></label>{adminError && <p className="form-error" role="alert">{adminError}</p>}{adminMessage && <p className="form-success" role="status">{adminMessage}</p>}<button className="button button-primary button-full" type="submit"><Icon name="plus" size={16}/>{editingTree ? 'Save changes' : 'Create pending record'}</button></form><div className="admin-records"><div className="section-heading"><div><span className="section-kicker">INVENTORY ADMIN</span><h2>Individual tree records</h2></div><span className="chart-total">{trees.length}</span></div>{trees.length ? <div className="record-list">{trees.map(tree=><article className="record-row" key={tree._id}><span className="record-tree-icon"><Icon name="tree" size={19}/></span><div className="record-main"><b>{tree.commonName}</b><small>{tree.treeId} · {tree.zone?.name || 'No zone'}</small><span className={`record-status ${tree.verificationStatus}`}>{tree.verificationStatus || 'pending'}</span></div><div className="record-actions"><button title="Edit record" onClick={()=>editTree(tree)}>Edit</button>{tree.verificationStatus !== 'verified' && <button title="Verify and publish" onClick={()=>verifyTree(tree,'verified')}>Verify</button>}<button title="Delete record" className="danger-action" onClick={()=>deleteTree(tree)}>Delete</button></div></article>)}</div> : <EmptyState title="No individual records yet" text="Add a tree from the actual field survey. The aggregate count of 38 is not auto-expanded into invented records."/>}</div></div>}{adminTab === 'spaces' && <AdminSpaces spaces={spaces} zones={zones} refresh={loadAll} report={setAdminMessage} error={setAdminError} adminMessage={adminMessage} adminError={adminError}/ >}{adminTab === 'zones' && <AdminZones zones={zones} refresh={loadAll} report={setAdminMessage} error={setAdminError} adminMessage={adminMessage} adminError={adminError}/ >}{adminTab === 'logs' && <AuditLogPanel/>}{adminTab === 'gallery' && <AdminGallery gallery={gallery} refresh={loadAll} report={setAdminMessage} error={setAdminError} adminMessage={adminMessage} adminError={adminError}/ >}{adminTab === 'responses' && <SurveyResponses/>}{adminTab === 'summary' && <SurveySummaryForm summary={summary} refresh={loadAll} report={setAdminMessage} error={setAdminError} adminMessage={adminMessage} adminError={adminError}/ >}{adminTab === 'reset' && <ContentResetPanel report={setAdminMessage} error={setAdminError} adminMessage={adminMessage} adminError={adminError} onReset={async()=>{await loadAll();setSummary(null);setTrees([]);setTreeTotal(0);setZones([]);setSpaces([]);setGallery([]);setAdminTab('trees');setTreeForm({treeId:'',commonName:'',scientificName:'',zone:'',condition:'healthy',notes:'',latitude:'',longitude:'',locationVerified:false,photoAltText:''});setEditingTree(null)}}/>}</>}</section>}
     </main>
     <footer className="site-footer"><button className="footer-brand" onClick={()=>go('home')}><span className="brand-mark"><Icon name="leaf" size={21}/></span><b>green<span>map</span></b></button><p>Protect the record. Grow the impact.</p><div className="footer-links"><button onClick={()=>go('about')}>About</button><button onClick={()=>go('survey')}>Survey</button><button onClick={()=>go('admin')}>Admin access</button></div><small>THEEM COLLEGE OF ENGINEERING · BETEGAON · 2026</small></footer>
+  </div>
+}
+
+
+
+function parseCountLines(source, label) {
+  const rows = source.split('\n').map(line => line.trim()).filter(Boolean).map((line, index) => {
+    const parts = line.split('|')
+    if (parts.length < 2) throw new Error(`${label}, line ${index + 1}: use Name | Count.`)
+    const name = parts.slice(0, -1).join('|').trim()
+    const countText = parts.at(-1).trim()
+    const count = Number(countText)
+    if (!name || !Number.isInteger(count) || count < 0 || count > 100000) {
+      throw new Error(`${label}, line ${index + 1}: enter a name and a whole count from 0 to 100000.`)
+    }
+    return { name, count }
+  })
+  const names = rows.map(row => row.name.toLowerCase())
+  if (new Set(names).size !== names.length) throw new Error(`${label} contains duplicate names.`)
+  return rows
+}
+
+function SurveySummaryForm({ summary, refresh, report, error, adminMessage, adminError }) {
+  const toLines = items => (items || []).map(item => `${item.name} | ${item.count}`).join('\n')
+  const formFromSummary = item => ({
+    surveyDate: item?.surveyDate ? new Date(item.surveyDate).toISOString().slice(0, 10) : '',
+    totalTrees: String(item?.totalTrees ?? 0),
+    zoneCounts: toLines(item?.zoneCounts),
+    healthy: String(item?.conditionCounts?.healthy ?? 0),
+    needsAttention: String(item?.conditionCounts?.needsAttention ?? 0),
+    uncertain: String(item?.conditionCounts?.uncertain ?? 0),
+    speciesCounts: toLines(item?.speciesCounts),
+    verificationStatus: item?.verificationStatus || 'provisional',
+    sourceNotes: item?.sourceNotes || '',
+  })
+  const [form, setForm] = useState(() => formFromSummary(summary))
+  const [saving, setSaving] = useState(false)
+  useEffect(() => { setForm(formFromSummary(summary)) }, [summary])
+  function change(key, value) { setForm(current => ({ ...current, [key]: value })) }
+  async function submit(event) {
+    event.preventDefault(); report(''); error(''); setSaving(true)
+    try {
+      if (!form.surveyDate) throw new Error('Choose the field survey date.')
+      const totalTrees = Number(form.totalTrees)
+      const conditions = { healthy: Number(form.healthy), needsAttention: Number(form.needsAttention), uncertain: Number(form.uncertain) }
+      if (!Number.isInteger(totalTrees) || totalTrees < 0 || totalTrees > 100000) throw new Error('Total trees must be a whole number from 0 to 100000.')
+      if (Object.values(conditions).some(value => !Number.isInteger(value) || value < 0 || value > 100000)) throw new Error('Condition counts must be whole numbers from 0 to 100000.')
+      const zoneCounts = parseCountLines(form.zoneCounts, 'Zone counts')
+      const speciesCounts = parseCountLines(form.speciesCounts, 'Species counts')
+      if (Object.values(conditions).reduce((sum, value) => sum + value, 0) !== totalTrees) throw new Error('Healthy + Needs attention + Uncertain must equal the total trees.')
+      if (zoneCounts.reduce((sum, item) => sum + item.count, 0) !== totalTrees) throw new Error('The sum of zone counts must equal the total trees.')
+      if (speciesCounts.reduce((sum, item) => sum + item.count, 0) !== totalTrees) throw new Error('The sum of species/category counts must equal the total trees.')
+      const result = await request('/admin/survey-summary', { method: 'PUT', body: JSON.stringify({ surveyDate: form.surveyDate, totalTrees, zoneCounts, conditionCounts: conditions, speciesCounts, verificationStatus: form.verificationStatus, sourceNotes: form.sourceNotes }) })
+      report(`Survey summary saved: ${result.summary.totalTrees} survey-reported trees.`)
+      await refresh()
+    } catch (err) { error(err.message || 'Could not save the survey summary.') }
+    finally { setSaving(false) }
+  }
+  return <div className="admin-workgrid summary-admin-grid">
+    <form className="admin-form" onSubmit={submit}>
+      <span className="section-kicker">AGGREGATE FIELD SURVEY</span><h2>{summary ? 'Edit survey summary' : 'Add survey summary'}</h2>
+      <p className="admin-help">These are survey totals, not individual tree records. Add real observations only; map markers are created separately in Tree records.</p>
+      <div className="form-two"><label>Survey date<input type="date" required value={form.surveyDate} onChange={e=>change('surveyDate',e.target.value)}/></label><label>Total trees in survey<input type="number" min="0" max="100000" required value={form.totalTrees} onChange={e=>change('totalTrees',e.target.value)}/></label></div>
+      <label>Zone counts <span className="optional-label">One per line: Name | Count</span><textarea rows="5" value={form.zoneCounts} onChange={e=>change('zoneCounts',e.target.value)} placeholder={'Main Ground | 10\nVolleyball Ground | 21\nParking | 7\nFlower Garden | 0'}/></label>
+      <div className="form-three"><label>Healthy<input type="number" min="0" value={form.healthy} onChange={e=>change('healthy',e.target.value)}/></label><label>Needs attention<input type="number" min="0" value={form.needsAttention} onChange={e=>change('needsAttention',e.target.value)}/></label><label>Uncertain<input type="number" min="0" value={form.uncertain} onChange={e=>change('uncertain',e.target.value)}/></label></div>
+      <label>Species / category counts <span className="optional-label">One per line: Name | Count</span><textarea rows="7" value={form.speciesCounts} onChange={e=>change('speciesCounts',e.target.value)} placeholder={'Neem | 2\nGulmohar | 9\nOther / not identified | 7'}/></label>
+      <div className="form-two"><label>Summary status<select value={form.verificationStatus} onChange={e=>change('verificationStatus',e.target.value)}><option value="provisional">Provisional</option><option value="verified">Verified</option></select></label><label>Source note<input maxLength="2000" value={form.sourceNotes} onChange={e=>change('sourceNotes',e.target.value)} placeholder="Field report / survey source"/></label></div>
+      {adminError&&<p className="form-error" role="alert">{adminError}</p>}{adminMessage&&<p className="form-success" role="status">{adminMessage}</p>}
+      <button className="button button-primary button-full" disabled={saving}>{saving?'Saving summary…':'Save survey summary'}</button>
+    </form>
+    <aside className="admin-records"><span className="section-kicker">DATA INTEGRITY</span><h2>Keep the numbers consistent</h2><p>The total in the summary appears in Insights. Individual tree records are managed in a separate tab and must be entered one by one.</p><div className="summary-rule"><b>Condition total</b><span>{Number(form.healthy||0)+Number(form.needsAttention||0)+Number(form.uncertain||0)} / {Number(form.totalTrees||0)}</span></div><div className="summary-rule"><b>Zone count total</b><span>{form.zoneCounts.split('\n').map(line=>line.trim()).filter(Boolean).reduce((sum,line)=>sum+Number((line.split('|').at(-1)||'').trim()),0)} / {Number(form.totalTrees||0)}</span></div><div className="summary-rule"><b>Species count total</b><span>{form.speciesCounts.split('\n').map(line=>line.trim()).filter(Boolean).reduce((sum,line)=>sum+Number((line.split('|').at(-1)||'').trim()),0)} / {Number(form.totalTrees||0)}</span></div></aside>
+  </div>
+}
+
+function ContentResetPanel({ report, error, adminMessage, adminError, onReset }) {
+  const [confirmation, setConfirmation] = useState('')
+  const [busy, setBusy] = useState(false)
+  async function reset() {
+    if (confirmation !== 'CLEAR GREENMAP CONTENT') { error('Type CLEAR GREENMAP CONTENT exactly to confirm.'); return }
+    if (!window.confirm('This permanently deletes tree records, campus zones, green spaces, gallery images, survey responses, and the aggregate survey summary. Continue?')) return
+    setBusy(true); report(''); error('')
+    try {
+      const result = await request('/admin/reset-content', { method: 'POST', body: JSON.stringify({ confirmation }) })
+      const counts = result.deleted || {}
+      report(`Content cleared. Trees: ${counts.trees||0}; green spaces: ${counts.greenSpaces||0}; images: ${counts.galleryImages||0}; zones: ${counts.campusZones||0}; responses: ${counts.surveyResponses||0}; summaries: ${counts.surveySummaries||0}. Admin account, sessions and audit history were preserved.`)
+      setConfirmation('')
+      await onReset()
+    } catch (err) { error(err.message || 'Content reset failed.') }
+    finally { setBusy(false) }
+  }
+  return <div className="reset-panel admin-records">
+    <span className="section-kicker">DESTRUCTIVE ACTION / ADMIN ONLY</span><h2>Clear GreenMap content</h2>
+    <p>This removes individual trees, photos linked to those records, campus green spaces, gallery images, campus zones, public survey responses and the aggregate survey summary. It does <b>not</b> delete your administrator account, login sessions or audit history.</p>
+    <p>Make sure you have a backup first. Content can only be added again through the admin forms after the reset.</p>
+    <label>Type <code>CLEAR GREENMAP CONTENT</code> to confirm<input value={confirmation} onChange={e=>setConfirmation(e.target.value)} autoComplete="off" placeholder="Type confirmation phrase"/></label>
+    {adminError&&<p className="form-error" role="alert">{adminError}</p>}{adminMessage&&<p className="form-success" role="status">{adminMessage}</p>}
+    <button className="button button-danger" disabled={busy||confirmation!=='CLEAR GREENMAP CONTENT'} onClick={reset}>{busy?'Clearing content…':'Clear all content data'}</button>
   </div>
 }
 
@@ -417,7 +522,7 @@ function AuditLogPanel(){
 }
 
 function AdminSpaces({ spaces, zones, refresh, report, error, adminMessage, adminError }) {
-  const emptyForm = { name: '', description: '', zone: '', latitude: '', longitude: '', locationVerified: false }
+  const emptyForm = { name: '', description: '', zone: '', latitude: '', longitude: '', locationVerified: false, photoAltText: '' }
   const [form, setForm] = useState(emptyForm)
   const [file, setFile] = useState(null)
   const [editing, setEditing] = useState(null)
@@ -426,7 +531,7 @@ function AdminSpaces({ spaces, zones, refresh, report, error, adminMessage, admi
   function edit(space){
     const coords=space.location?.coordinates
     setEditing(space)
-    setForm({name:space.name||'',description:space.description||'',zone:space.zone?._id||'',latitude:coords?String(coords[1]):'',longitude:coords?String(coords[0]):'',locationVerified:Boolean(space.locationVerified)})
+    setForm({name:space.name||'',description:space.description||'',zone:space.zone?._id||'',latitude:coords?String(coords[1]):'',longitude:coords?String(coords[0]):'',locationVerified:Boolean(space.locationVerified),photoAltText:space.photos?.[0]?.altText||space.name||''})
     setFile(null);setLocationPicker(false);report('');error('')
   }
   async function submit(e){
@@ -440,7 +545,7 @@ function AdminSpaces({ spaces, zones, refresh, report, error, adminMessage, admi
         ? await request('/green-spaces/'+editing._id,{method:'PATCH',body:JSON.stringify(payload)})
         : await request('/green-spaces',{method:'POST',body:JSON.stringify(payload)})
       const item=result.item
-      if(file&&item?._id){const data=new FormData();data.append('image',file);await request('/green-spaces/'+item._id+'/photos',{method:'POST',body:data})}
+      if(file&&item?._id){const data=new FormData();data.append('image',file);data.append('altText',form.photoAltText||form.name);await request('/green-spaces/'+item._id+'/photos',{method:'POST',body:data})}
       report(editing?'Green space updated.':'Green space created.')
       reset();await refresh()
     }catch(err){error(err.message)}
@@ -460,6 +565,7 @@ function AdminSpaces({ spaces, zones, refresh, report, error, adminMessage, admi
       <label className="verification-check"><input type="checkbox" checked={Boolean(form.locationVerified)} onChange={e=>setForm({...form,locationVerified:e.target.checked})}/> I verified the exact location on site.</label>
       <button type="button" className="button button-outline button-full" onClick={()=>setLocationPicker(!locationPicker)}><Icon name="pin" size={16}/>{locationPicker?'Hide location picker':'Choose location on map'}</button>
       {locationPicker&&<LeafletMap trees={[]} editable selectedLocation={form.latitude&&form.longitude?{lat:Number(form.latitude),lng:Number(form.longitude)}:null} onPick={point=>setForm({...form,latitude:String(point.lat),longitude:String(point.lng)})}/>}
+      <label>Photo description (alt text)<input maxLength="180" value={form.photoAltText} onChange={e=>setForm({...form,photoAltText:e.target.value})} placeholder="Describe the photograph"/></label>
       <label>Photograph <span className="optional-label">Optional · JPG, PNG or WEBP, up to 5 MB</span><input type="file" accept="image/jpeg,image/png,image/webp" onChange={e=>setFile(e.target.files?.[0]||null)}/></label>
       {adminError&&<p className="form-error" role="alert">{adminError}</p>}{adminMessage&&<p className="form-success" role="status">{adminMessage}</p>}
       <button className="button button-primary button-full">{editing?'Save changes':'Create green space'}</button>{editing&&<button type="button" className="button button-outline button-full" onClick={reset}>Cancel edit</button>}
