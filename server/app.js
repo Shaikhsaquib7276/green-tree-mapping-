@@ -30,17 +30,22 @@ app.use(helmet({
       fontSrc:["'self'","data:","https://fonts.gstatic.com"],
       formAction:["'self'"],
       frameAncestors:["'self'"],
-      imgSrc:["'self'","data:","blob:","https://tile.openstreetmap.org","https://*.tile.openstreetmap.org","https://basemaps.cartocdn.com","https://*.basemaps.cartocdn.com","https://res.cloudinary.com"],
+      imgSrc:["'self'","data:","blob:","https://tile.openstreetmap.org","https://*.tile.openstreetmap.org","https://res.cloudinary.com"],
       objectSrc:["'none'"],
       scriptSrc:["'self'"],
       scriptSrcAttr:["'none'"],
       styleSrc:["'self'","'unsafe-inline'","https://fonts.googleapis.com"],
-      connectSrc:["'self'","https://tile.openstreetmap.org","https://*.tile.openstreetmap.org","https://basemaps.cartocdn.com","https://*.basemaps.cartocdn.com","https://nominatim.openstreetmap.org"],
+      connectSrc:["'self'","https://tile.openstreetmap.org","https://*.tile.openstreetmap.org","https://nominatim.openstreetmap.org"],
       upgradeInsecureRequests:[]
     }
   }
 }))
-app.use(express.static(clientDist,{index:false,setHeaders(res,filePath){if(path.basename(filePath)==='index.html')res.setHeader('Cache-Control','no-cache')}}))
+app.use(express.static(clientDist,{index:false,setHeaders(res,filePath){
+  // Do not let browsers/proxies keep old JavaScript bundles after a deploy.
+  res.setHeader('Cache-Control','no-store, no-cache, must-revalidate, proxy-revalidate')
+  res.setHeader('Pragma','no-cache')
+  res.setHeader('Expires','0')
+}}))
 app.use(cors({origin:process.env.CLIENT_URL||'http://localhost:5173',credentials:true}))
 app.use(express.json({limit:'1mb'}))
 app.use(express.urlencoded({extended:false,limit:'1mb'}))
@@ -57,10 +62,17 @@ app.use('/api/v1/survey',surveyRoutes)
 app.use('/api/v1/statistics',statisticsRoutes)
 app.use('/api/v1/admin',adminRoutes)
 app.get('/api/v1/admin/dashboard',requireAdmin,async(req,res,next)=>{try{const recent=await AuditLog.find().sort({createdAt:-1}).limit(10).lean();res.json({recent})}catch(e){next(e)}})
-app.get('/',(_req,res)=>{if(fs.existsSync(clientIndex))return res.sendFile(clientIndex);return res.json({ok:true,name:'GreenMap API',message:'GreenMap backend is running.',health:'/api/health',apiBase:'/api/v1'})})
+function sendClientIndex(res){
+ res.setHeader('Cache-Control','no-store, no-cache, must-revalidate, proxy-revalidate')
+ res.setHeader('Pragma','no-cache')
+ res.setHeader('Expires','0')
+ res.setHeader('X-GreenMap-Frontend','osm-no-key-v2')
+ return res.sendFile(clientIndex)
+}
+app.get('/',(_req,res)=>{if(fs.existsSync(clientIndex))return sendClientIndex(res);return res.json({ok:true,name:'GreenMap API',message:'GreenMap backend is running.',health:'/api/health',apiBase:'/api/v1'})})
 app.get('/api/health',(req,res)=>res.json({ok:true,service:'greenmap-api'}))
 app.use('/api',(_req,res)=>res.status(404).json({success:false,error:{code:'API_NOT_FOUND',message:'API endpoint not found.'}}))
-app.get(/.*/,(req,res)=>{if(fs.existsSync(clientIndex))return res.sendFile(clientIndex);return res.status(404).json({success:false,error:{code:'ROUTE_NOT_FOUND',message:'Route not found.'}})})
+app.get(/.*/,(req,res)=>{if(fs.existsSync(clientIndex))return sendClientIndex(res);return res.status(404).json({success:false,error:{code:'ROUTE_NOT_FOUND',message:'Route not found.'}})})
 app.use((err,req,res,_next)=>{
  console.error('API request failed:',err.message)
  if(err.name==='ValidationError')return res.status(400).json({success:false,error:{code:'VALIDATION_ERROR',message:err.message}})
