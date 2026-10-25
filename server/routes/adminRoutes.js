@@ -9,11 +9,97 @@ const GreenSpace=require('../models/GreenSpace')
 const GalleryImage=require('../models/GalleryImage')
 const SurveySummary=require('../models/SurveySummary')
 const {deleteAsset}=require('../services/cloudinaryService')
+const {recordAudit}=require('../services/auditService')
 const requireAdmin=require('../middleware/requireAdmin')
 const {recordAudit}=require('../services/auditService')
 const router=express.Router()
 const asyncRoute=fn=>(req,res,next)=>Promise.resolve(fn(req,res,next)).catch(next)
 router.use(requireAdmin)
+router.post('/import-cep-trees',asyncRoute(async(req,res)=>{
+ const zones=[
+  {name:'Main Ground',slug:'main-ground',sortOrder:1,description:'CEP survey zone; individual tree coordinates were not supplied.'},
+  {name:'Volleyball Ground',slug:'volleyball-ground',sortOrder:2,description:'CEP survey zone; individual tree coordinates were not supplied.'},
+  {name:'Parking',slug:'parking',sortOrder:3,description:'CEP survey zone; individual tree coordinates were not supplied.'},
+  {name:'Flower Garden',slug:'flower-garden',sortOrder:4,description:'CEP survey zone; no trees were recorded in the 20 September 2026 survey.'}
+ ]
+ const zoneBySlug={}
+ let createdZones=0
+ for(const zone of zones){
+  const result=await CampusZone.updateOne({slug:zone.slug},{$setOnInsert:{...zone,isActive:true}},{upsert:true})
+  createdZones+=result.upsertedCount||0
+  zoneBySlug[zone.slug]=await CampusZone.findOne({slug:zone.slug})
+ }
+ const rows=[
+  ...Array.from({length:5},(_,i)=>({treeId:'T-'+String(i+1).padStart(3,'0'),commonName:'Gulmohar',zoneSlug:'main-ground'})),
+  {treeId:'T-006',commonName:'Sitaphal',zoneSlug:'main-ground'},
+  {treeId:'T-007',commonName:'Black Jamun',zoneSlug:'main-ground'},
+  {treeId:'T-008',commonName:'White Jamun',zoneSlug:'main-ground'},
+  {treeId:'T-009',commonName:'Other / not identified',zoneSlug:'main-ground'},
+  {treeId:'T-010',commonName:'Other / not identified',zoneSlug:'main-ground'},
+  {treeId:'T-011',commonName:'Neem',zoneSlug:'volleyball-ground'},
+  {treeId:'T-012',commonName:'Neem',zoneSlug:'volleyball-ground'},
+  {treeId:'T-013',commonName:'Gulmohar',zoneSlug:'volleyball-ground'},
+  {treeId:'T-014',commonName:'Gulmohar',zoneSlug:'volleyball-ground'},
+  {treeId:'T-015',commonName:'Ashoka',zoneSlug:'volleyball-ground'},
+  {treeId:'T-016',commonName:'Bore (Ber)',zoneSlug:'volleyball-ground'},
+  {treeId:'T-017',commonName:'Bore (Ber)',zoneSlug:'volleyball-ground'},
+  {treeId:'T-018',commonName:'Sitaphal',zoneSlug:'volleyball-ground'},
+  {treeId:'T-019',commonName:'Sitaphal',zoneSlug:'volleyball-ground'},
+  {treeId:'T-020',commonName:'Amrud (Guava)',zoneSlug:'volleyball-ground'},
+  {treeId:'T-021',commonName:'Jamun',zoneSlug:'volleyball-ground'},
+  {treeId:'T-022',commonName:'Khajur',zoneSlug:'volleyball-ground'},
+  {treeId:'T-023',commonName:'Khajur',zoneSlug:'volleyball-ground'},
+  {treeId:'T-024',commonName:'Black Jamun',zoneSlug:'volleyball-ground'},
+  {treeId:'T-025',commonName:'Black Jamun',zoneSlug:'volleyball-ground'},
+  {treeId:'T-026',commonName:'White Jamun',zoneSlug:'volleyball-ground'},
+  {treeId:'T-027',commonName:'Badam',zoneSlug:'volleyball-ground'},
+  {treeId:'T-028',commonName:'Badam',zoneSlug:'volleyball-ground'},
+  {treeId:'T-029',commonName:'Other / not identified',zoneSlug:'volleyball-ground'},
+  {treeId:'T-030',commonName:'Other / not identified',zoneSlug:'volleyball-ground'},
+  {treeId:'T-031',commonName:'Other / not identified',zoneSlug:'volleyball-ground'},
+  {treeId:'T-032',commonName:'Gulmohar',zoneSlug:'parking'},
+  {treeId:'T-033',commonName:'Gulmohar',zoneSlug:'parking'},
+  {treeId:'T-034',commonName:'Jamun',zoneSlug:'parking'},
+  {treeId:'T-035',commonName:'Khajur',zoneSlug:'parking'},
+  {treeId:'T-036',commonName:'Black Jamun',zoneSlug:'parking'},
+  {treeId:'T-037',commonName:'Other / not identified',zoneSlug:'parking'},
+  {treeId:'T-038',commonName:'Other / not identified',zoneSlug:'parking'}
+ ]
+ const summaryData={
+  projectKey:'theem-campus-2026',
+  surveyDate:new Date('2026-09-20T00:00:00.000Z'),
+  totalTrees:38,
+  zoneCounts:[{name:'Main Ground',count:10},{name:'Volleyball Ground',count:21},{name:'Parking',count:7},{name:'Flower Garden',count:0}],
+  conditionCounts:{healthy:25,needsAttention:10,uncertain:3},
+  speciesCounts:[{name:'Neem',count:2},{name:'Gulmohar',count:9},{name:'Ashoka',count:1},{name:'Bore (Ber)',count:2},{name:'Sitaphal',count:3},{name:'Amrud (Guava)',count:1},{name:'Jamun',count:2},{name:'Khajur',count:3},{name:'Black Jamun',count:4},{name:'White Jamun',count:2},{name:'Badam',count:2},{name:'Other / not identified',count:7}],
+  verificationStatus:'verified',
+  sourceNotes:'Aggregate counts taken from the GreenMap CEP report for 20 September 2026. Individual T-001 to T-038 rows are reconstructed from aggregate species/zone counts; IDs are report identifiers, not verified physical tree tags. Per-tree GPS, observed condition and photo references were not supplied.'
+ }
+ const summaryResult=await SurveySummary.updateOne({projectKey:summaryData.projectKey},{$setOnInsert:summaryData},{upsert:true})
+ let createdTrees=0,existingTrees=0
+ for(const row of rows){
+  const zone=zoneBySlug[row.zoneSlug]
+  if(!zone)throw new Error('Could not resolve campus zone: '+row.zoneSlug)
+  const treeData={
+   treeId:row.treeId,commonName:row.commonName,scientificName:'',scientificNameVerified:false,zone:zone._id,
+   condition:'uncertain',location:null,locationVerified:false,photos:[],
+   notes:'Reconstructed from CEP zone/species counts. Individual condition, precise GPS coordinates and a photo-to-tree link were not recorded in the supplied report. Verify this row against the original field sheet.',
+   verificationStatus:'pending',source:'CEP reconstructed inventory',recordedAt:new Date('2026-09-20T00:00:00.000Z')
+  }
+  const result=await Tree.updateOne({treeId:row.treeId},{$setOnInsert:treeData},{upsert:true,runValidators:true})
+  if(result.upsertedCount)createdTrees++;else existingTrees++
+ }
+ await recordAudit({actor:req.user,action:'cep_import',entityType:'Tree',entityId:'CEP-2026',details:{rows:rows.length,createdTrees,existingTrees,createdZones,createdSummary:Boolean(summaryResult.upsertedCount)}})
+ res.json({
+  success:true,
+  surveyRowsInReport:rows.length,
+  createdTrees,
+  existingTreesPreserved:existingTrees,
+  createdZones,
+  createdSurveySummary:Boolean(summaryResult.upsertedCount),
+  message:'CEP data import finished. Reconstructed entries are visible as pending; exact per-tree GPS, individual conditions and photo associations remain unverified.'
+ })
+}))
 router.put('/survey-summary',asyncRoute(async(req,res)=>{
  const count=Joi.number().integer().min(0).max(100000).required()
  const {error,value}=Joi.object({
