@@ -330,3 +330,17 @@ textarea,input:not([type="radio"]):not([type="file"]):not([type="checkbox"]){min
 :root[data-theme="dark"] .import-integrity{background:#15231a}
 :root[data-theme="dark"] .tree-card-body .record-status.pending{background:#41371f;color:#f1d891}
 @media(max-width:760px){.cep-import-grid{grid-template-columns:minmax(0,1fr)}}
+
+
+/* Map tile failure feedback and robust mobile map sizing */
+.map-load-error{position:absolute;z-index:700;left:50%;top:14px;transform:translateX(-50%);display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px;width:min(420px,calc(100% - 24px));padding:12px 14px;border:1px solid #e4c6a6;border-radius:12px;background:rgba(255,251,244,.97);color:#674728;box-shadow:0 8px 24px #173b2b18;font-size:12px;text-align:center}
+.map-load-error b{width:100%;font-size:13px}
+.map-load-error span{line-height:1.5}
+.map-load-error button{border:1px solid #dac4a7;border-radius:8px;padding:6px 10px;background:#fff;color:#674728;font-size:11px;font-weight:700}
+.leaflet-frame .leaflet-map{min-height:245px}
+.admin-form .leaflet-frame{width:100%;min-width:0}
+.admin-form .leaflet-frame .leaflet-map{height:280px}
+.leaflet-container{font-family:'DM Sans',sans-serif}
+@media(max-width:760px){.leaflet-map{height:340px}.admin-form .leaflet-frame .leaflet-map{height:250px}}
+:root[data-theme="dark"] .map-load-error{background:rgba(34,27,19,.97);border-color:#6a4e35;color:#f0d6b4}
+:root[data-theme="dark"] .map-load-error button{background:#302419;border-color:#6a4e35;color:#f0d6b4}
