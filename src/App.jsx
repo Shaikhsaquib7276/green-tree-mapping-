@@ -168,29 +168,36 @@ function LeafletMap({ trees = [], greenSpaces = [], editable = false, selectedLo
     markersRef.current = L.layerGroup().addTo(map)
     setMapError(false)
 
-    let tileLoaded = false
-    let tileErrors = 0
-    const tileUrl = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}'
-    const tileLayer = L.tileLayer(tileUrl, {
-      maxZoom: 19,
-      attribution: '&copy; Esri &mdash; Sources: Esri, HERE, Garmin, USGS, Intermap, INCREMENT P, NRCAN, Esri Japan, METI, TomTom',
-      updateWhenIdle: true,
-      keepBuffer: 2,
-    })
-    tileLayer.on('tileload', () => {
-      tileLoaded = true
-      tileErrors = 0
-      setMapError(false)
-    })
-    vectorMap.on('error', event => {
-      if (!styleLoaded) {
-        console.warn('OpenFreeMap basemap failed to load:', event?.error?.message || 'unknown map error')
-        setMapError(true)
+    let styleLoaded = false
+    let retryTimer = null
+    let vectorMap = null
+    let handleVectorLoad = null
+    let handleVectorError = null
+    try {
+      const basemap = maplibreGL({
+        style: 'https://tiles.openfreemap.org/styles/liberty',
+        minZoom: 1,
+        attributionControl: true,
+      }).addTo(map)
+      vectorMap = basemap.getMaplibreMap()
+      handleVectorLoad = () => {
+        styleLoaded = true
+        setMapError(false)
       }
-    })
-    const retryTimer = window.setTimeout(() => {
-      if (!styleLoaded) setMapError(true)
-    }, 12000)
+      handleVectorError = event => {
+        if (!styleLoaded) {
+          console.warn('OpenFreeMap style loading error:', event?.error?.message || 'unknown map error')
+        }
+      }
+      vectorMap.on('load', handleVectorLoad)
+      vectorMap.on('error', handleVectorError)
+      retryTimer = window.setTimeout(() => {
+        if (!styleLoaded) setMapError(true)
+      }, 15000)
+    } catch (error) {
+      console.error('Could not initialize OpenFreeMap:', error)
+      setMapError(true)
+    }
 
     const resize = () => map.invalidateSize({ pan: false })
     window.addEventListener('resize', resize)
@@ -202,9 +209,11 @@ function LeafletMap({ trees = [], greenSpaces = [], editable = false, selectedLo
     const timer = window.setTimeout(resize, 250)
     return () => {
       window.clearTimeout(timer)
-      window.clearTimeout(retryTimer)
+      if (retryTimer) window.clearTimeout(retryTimer)
       window.removeEventListener('resize', resize)
       observer?.disconnect()
+      if (vectorMap && handleVectorLoad) vectorMap.off('load', handleVectorLoad)
+      if (vectorMap && handleVectorError) vectorMap.off('error', handleVectorError)
       map.remove()
       mapRef.current = null
       markersRef.current = null
@@ -324,7 +333,7 @@ function LeafletMap({ trees = [], greenSpaces = [], editable = false, selectedLo
     </div>}
     <div className={`leaflet-frame ${editable ? 'location-picker-map-frame' : ''}`}>
       <div ref={elementRef} className="leaflet-map" aria-label={editable ? 'Search a place or click to choose coordinates' : 'Map of recorded trees'} />
-      {mapError && <div className="map-load-error" role="status"><b>Map tiles could not load.</b><span>OpenFreeMap could not load the street map. Check your connection and retry.</span><button type="button" onClick={() => window.location.reload()}>Retry map</button></div>}
+      {mapError && <div className="map-load-error" role="status"><b>Map tiles could not load.</b><span>OpenFreeMap failed to initialize. Check the browser console/network requests and retry.</span><button type="button" onClick={() => window.location.reload()}>Retry map</button></div>}
       {!editable && <div className="map-instruction"><Icon name="pin" size={15}/> Click the exact tree location to set coordinates</div>}
     </div>
     {editable && <div className="location-picker-fields">
