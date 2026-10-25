@@ -35,7 +35,7 @@ app.use(helmet({
       scriptSrc:["'self'"],
       scriptSrcAttr:["'none'"],
       styleSrc:["'self'","'unsafe-inline'","https://fonts.googleapis.com"],
-      connectSrc:["'self'","https://tile.openstreetmap.org","https://*.tile.openstreetmap.org","https://basemaps.cartocdn.com","https://*.basemaps.cartocdn.com"],
+      connectSrc:["'self'","https://tile.openstreetmap.org","https://*.tile.openstreetmap.org","https://basemaps.cartocdn.com","https://*.basemaps.cartocdn.com","https://nominatim.openstreetmap.org"],
       upgradeInsecureRequests:[]
     }
   }
