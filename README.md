@@ -126,7 +126,7 @@ Prefix: `/api/v1`
 
 ## Known deployment shape
 
-For a simple Render deployment, use a Node web service for `server/` and a static site for the Vite build. Set the root build command to `npm install && npm run build`, publish directory `dist`, and configure `VITE_API_BASE_URL` to the API service's public URL ending in `/api/v1`. Configure `CLIENT_URL` on the API service with the static site's exact origin. Both services must use HTTPS.
+For a single-service Render deployment, connect this repository as a Node web service using the repository root as the service root, `npm install` as the build command, and `npm start` as the start command. The start script builds the Vite frontend, then starts Express; Express serves `dist/` and keeps API endpoints under `/api/v1`, so the website and API share one origin. Leave `VITE_API_BASE_URL` unset for this setup (the frontend defaults to `/api/v1`). Set `MONGO_URL`, a unique `SESSION_SECRET` (32+ characters), and `NODE_ENV=production` in the Render environment. Set `CLIENT_URL` to the same public Render URL. Cloudinary credentials are only needed for image uploads. If the Render service already exists, merge the deployment fix into its connected branch and trigger a manual deploy if auto-deploy is disabled.
 
 ## License / project
 
