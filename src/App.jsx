@@ -69,6 +69,8 @@ function Icon({ name, size = 18 }) {
   const paths = {
     leaf: <><path d="M20 4c-8 0-14 4-14 11a5 5 0 0 0 5 5C18 20 20 12 20 4Z"/><path d="M4 21c2-5 5-8 11-11"/></>,
     menu: <><path d="M4 7h16M4 12h16M4 17h16"/></>,
+    moon: <><path d="M20.5 14.3A8.5 8.5 0 0 1 9.7 3.5 8.5 8.5 0 1 0 20.5 14.3Z"/></>,
+    sun: <><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.65 17.65l1.42 1.42M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.65 6.35l1.42-1.42"/></>,
     arrow: <><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></>,
     pin: <><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></>,
     tree: <><path d="M12 22v-7"/><path d="m8 15 4-5 4 5"/><path d="m5 11 7-8 7 8a3 3 0 0 1-2.2 5H7.2A3 3 0 0 1 5 11Z"/></>,
@@ -194,6 +196,7 @@ function App() {
   const initialRoute = () => (window.location.hash.replace(/^#\/?/, '') || 'home').split('/')[0]
   const [page, setPage] = useState(initialRoute)
   const [mobileNav, setMobileNav] = useState(false)
+  const [theme, setTheme] = useState(() => { try { return localStorage.getItem('greenmap-theme') === 'dark' ? 'dark' : 'light' } catch { return 'light' } })
   const [summary, setSummary] = useState(null)
   const [trees, setTrees] = useState([])
   const [treeTotal, setTreeTotal] = useState(0)
@@ -217,7 +220,7 @@ function App() {
   const [adminError, setAdminError] = useState('')
   const [editingTree, setEditingTree] = useState(null)
   const [locationPicker, setLocationPicker] = useState(false)
-  const [treeForm, setTreeForm] = useState({ treeId: '', commonName: '', scientificName: '', zone: '', condition: 'healthy', notes: '', latitude: '', longitude: '', locationVerified: false })
+  const [treeForm, setTreeForm] = useState({ treeId: '', commonName: '', scientificName: '', zone: '', condition: 'healthy', notes: '', latitude: '', longitude: '', locationVerified: false, photoAltText: '' })
   const [surveyForm, setSurveyForm] = useState({ ageGroup: '', zone: '', awareness: '', greenSpaceImportance: '', treeCareAwareness: '', participationInterest: '', suggestions: '' })
 
   const go = useCallback((next, replace = false) => {
@@ -235,7 +238,7 @@ function App() {
       ])
       if (overview.status === 'fulfilled') setSummary(overview.value.summary || null)
       if (treeList.status === 'fulfilled') { setTrees(treeList.value.items || []); setTreeTotal(treeList.value.total || 0) }
-      if (zoneList.status === 'fulfilled' && zoneList.value.items?.length) setZones(zoneList.value.items)
+      if (zoneList.status === 'fulfilled') setZones(zoneList.value.items || [])
       if (spaceList.status === 'fulfilled') setSpaces(spaceList.value.items || [])
       if (galleryList.status === 'fulfilled') setGallery(galleryList.value.items || [])
       if (me.status === 'fulfilled') setSessionUser(me.value.user || null)
@@ -255,39 +258,44 @@ function App() {
     return () => window.removeEventListener('popstate', onPopState)
   }, [loadAll])
 
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+    try { localStorage.setItem('greenmap-theme', theme) } catch { /* storage may be unavailable */ }
+  }, [theme])
+
   const individualMapped = useMemo(() => trees.filter(t => t.verificationStatus === 'verified' && t.locationVerified === true && Array.isArray(t.location?.coordinates) && t.location.coordinates.length === 2 && t.location.coordinates.every(Number.isFinite)).length, [trees])
-  const aggregate = summary || SURVEY
-  const surveyTotal = aggregate?.totalTrees ?? SURVEY.totalTrees
+  const aggregate = summary || (apiReady ? null : SURVEY)
+  const surveyTotal = aggregate?.totalTrees ?? (apiReady ? 0 : SURVEY.totalTrees)
   const surveyDate = aggregate?.surveyDate
     ? new Date(aggregate.surveyDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
-    : SURVEY.date
-  const surveyZones = Array.isArray(aggregate?.zoneCounts) && aggregate.zoneCounts.length
+    : (apiReady ? 'Not set' : SURVEY.date)
+  const surveyZones = Array.isArray(aggregate?.zoneCounts)
     ? aggregate.zoneCounts.map(zone => ({
         ...zone,
         color: SURVEY.zones.find(item => item.name === zone.name)?.color || '#5b9d6b',
       }))
-    : SURVEY.zones
+    : (aggregate ? SURVEY.zones : [])
   const surveyConditions = aggregate?.conditionCounts && !Array.isArray(aggregate.conditionCounts)
     ? [
         { name: 'Healthy', count: aggregate.conditionCounts.healthy ?? 0, color: '#4d9a6b' },
         { name: 'Needs attention', count: aggregate.conditionCounts.needsAttention ?? 0, color: '#d6a14d' },
         { name: 'Uncertain', count: aggregate.conditionCounts.uncertain ?? 0, color: '#9ba8a1' },
       ]
-    : SURVEY.conditions
-  const surveySpecies = Array.isArray(aggregate?.speciesCounts) && aggregate.speciesCounts.length
+    : (aggregate ? SURVEY.conditions : [{ name: 'Healthy', count: 0, color: '#4d9a6b' }, { name: 'Needs attention', count: 0, color: '#d6a14d' }, { name: 'Uncertain', count: 0, color: '#9ba8a1' }])
+  const surveySpecies = Array.isArray(aggregate?.speciesCounts)
     ? aggregate.speciesCounts.map(item => ({ name: item.name, count: item.count }))
-    : SURVEY.species.map(([name, count]) => ({ name, count }))
+    : (aggregate ? SURVEY.species.map(([name, count]) => ({ name, count })) : [])
 
   const storedTreeCount = aggregate?.counts?.storedTreeCount ?? treeTotal
   const verifiedTreeCount = aggregate?.counts?.verifiedTreeCount ?? trees.filter(t => t.verificationStatus === 'verified').length
   const title = ({ home: 'A living record of campus nature', map: 'Explore the green cover', trees: 'Tree catalogue', detail: activeTree?.commonName || 'Tree details', statistics: 'The story in the numbers', spaces: 'Campus green spaces', gallery: 'Field notes in pictures', survey: 'Your voice, greener campus', about: 'A small step toward a greener campus', admin: 'Admin workspace' })[page] || 'GreenMap'
 
   const openTree = tree => { setActiveTree(tree); go('detail') }
-  const resetTreeForm = () => { setEditingTree(null); setTreeForm({ treeId: '', commonName: '', scientificName: '', zone: zones[0]?._id || '', condition: 'healthy', notes: '', latitude: '', longitude: '' }); setLocationPicker(false) }
+  const resetTreeForm = () => { setEditingTree(null); setTreeForm({ treeId: '', commonName: '', scientificName: '', zone: zones[0]?._id || '', condition: 'healthy', notes: '', latitude: '', longitude: '', locationVerified: false, photoAltText: '' }); setLocationPicker(false) }
   const editTree = tree => {
     const coords = tree.location?.coordinates
     setEditingTree(tree)
-    setTreeForm({ treeId: tree.treeId || '', commonName: tree.commonName || '', scientificName: tree.scientificName || '', zone: tree.zone?._id || tree.zone || '', condition: tree.condition || 'healthy', notes: tree.notes || '', latitude: coords ? String(coords[1]) : '', longitude: coords ? String(coords[0]) : '', locationVerified: Boolean(tree.locationVerified) })
+    setTreeForm({ treeId: tree.treeId || '', commonName: tree.commonName || '', scientificName: tree.scientificName || '', zone: tree.zone?._id || tree.zone || '', condition: tree.condition || 'healthy', notes: tree.notes || '', latitude: coords ? String(coords[1]) : '', longitude: coords ? String(coords[0]) : '', locationVerified: Boolean(tree.locationVerified), photoAltText: tree.photos?.[0]?.altText || tree.commonName || '' })
     setLocationPicker(false)
     setAdminMessage('')
     setAdminError('')
@@ -323,7 +331,7 @@ function App() {
       let saved = result.tree
       const file = event.currentTarget.querySelector('input[type="file"]')?.files?.[0]
       if (file && saved?._id) {
-        const formData = new FormData(); formData.append('image', file)
+        const formData = new FormData(); formData.append('image', file); formData.append('altText', data.photoAltText || data.commonName)
         const imageResult = await request(`/trees/${saved._id}/photos`, { method: 'POST', body: formData })
         saved = imageResult.tree || saved
       }
@@ -366,7 +374,7 @@ function App() {
 
   const bar = (items, maxValue) => <div className="bar-list">{items.map(item => <div className="bar-row" key={item.name}><div className="bar-label"><span>{item.name}</span><strong>{item.count}</strong></div><div className="bar-track"><span style={{ width: `${maxValue ? (item.count / maxValue) * 100 : 0}%`, background: item.color || 'var(--green-600)' }} /></div></div>)}</div>
 
-  const header = <header className="site-header"><button className="brand" onClick={() => go('home')} aria-label="GreenMap home"><span className="brand-mark"><Icon name="leaf" size={24}/></span><span className="brand-copy"><b>green<span>map</span></b><small>FIELD NOTES / 2026</small></span></button><nav className={`nav-links ${mobileNav ? 'is-open' : ''}`} aria-label="Main navigation">{NAV.map(([key, label]) => <button key={key} className={page === key ? 'active' : ''} onClick={() => go(key)}>{label}</button>)}</nav><div className="header-actions"><button className="admin-link" onClick={() => go('admin')}><Icon name="shield" size={16}/><span>{sessionUser ? 'Admin area' : 'Admin login'}</span></button><button className="mobile-toggle" onClick={() => setMobileNav(!mobileNav)} aria-label="Toggle navigation"><Icon name={mobileNav ? 'close' : 'menu'} size={22}/></button></div></header>
+  const header = <header className="site-header"><button className="brand" onClick={() => go('home')} aria-label="GreenMap home"><span className="brand-mark"><Icon name="leaf" size={24}/></span><span className="brand-copy"><b>green<span>map</span></b><small>FIELD NOTES / 2026</small></span></button><nav className={`nav-links ${mobileNav ? 'is-open' : ''}`} aria-label="Main navigation">{NAV.map(([key, label]) => <button key={key} className={page === key ? 'active' : ''} onClick={() => go(key)}>{label}</button>)}</nav><div className="header-actions"><button className="theme-toggle" onClick={() => setTheme(current => current === 'dark' ? 'light' : 'dark')} aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`} title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}><Icon name={theme === 'dark' ? 'sun' : 'moon'} size={16}/><span>{theme === 'dark' ? 'Light' : 'Dark'}</span></button><button className="admin-link" onClick={() => go('admin')}><Icon name="shield" size={16}/><span>{sessionUser ? 'Admin area' : 'Admin login'}</span></button><button className="mobile-toggle" onClick={() => setMobileNav(!mobileNav)} aria-label="Toggle navigation"><Icon name={mobileNav ? 'close' : 'menu'} size={22}/></button></div></header>
 
   return <div className="app-shell">
     {header}
