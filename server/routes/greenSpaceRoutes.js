@@ -17,6 +17,7 @@ const schema=Joi.object({
  status:Joi.string().valid('draft','published').default('published'),
  latitude:Joi.number().min(-90).max(90).empty('').allow(null),
  longitude:Joi.number().min(-180).max(180).empty('').allow(null),
+ locationLabel:Joi.string().trim().max(300).allow('').default(''),
  locationVerified:Joi.boolean().default(false)
 }).custom((v,h)=>{
  const lat=v.latitude!==undefined&&v.latitude!==null, lng=v.longitude!==undefined&&v.longitude!==null
@@ -37,7 +38,7 @@ router.patch('/:id',requireAdmin,asyncRoute(async(req,res)=>{
  const {error,value}=schema.validate(req.body);if(error)return res.status(400).json({success:false,error:{message:error.details[0].message}})
  const item=await GreenSpace.findById(req.params.id);if(!item)return res.status(404).json({success:false,error:{message:'Green space not found.'}})
  const location=locationFrom(value)
- Object.assign(item,{name:value.name,description:value.description,zone:await resolveZone(value.zone),status:value.status,location,locationVerified:Boolean(location&&value.locationVerified),updatedBy:req.user._id})
+ Object.assign(item,{name:value.name,description:value.description,zone:await resolveZone(value.zone),status:value.status,location,locationLabel:value.locationLabel,locationVerified:Boolean(location&&value.locationVerified),updatedBy:req.user._id})
  await item.save()
  await recordAudit({actor:req.user,action:'update',entityType:'GreenSpace',entityId:item.id})
  res.json({success:true,item:await item.populate('zone','name slug')})

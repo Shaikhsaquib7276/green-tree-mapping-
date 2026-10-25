@@ -12,6 +12,7 @@ const TreeSchema=new mongoose.Schema({
  zone:{type:mongoose.Schema.Types.ObjectId,ref:'CampusZone',default:null},
  condition:{type:String,enum:['healthy','needs_attention','uncertain'],default:'uncertain'},
  location:{type:GeoJSONPointSchema,default:null},
+ locationLabel:{type:String,trim:true,maxlength:300,default:''},
  locationVerified:{type:Boolean,default:false},photos:{type:[PhotoSchema],default:[]},
  notes:{type:String,trim:true,maxlength:3000,default:''},
  verificationStatus:{type:String,enum:['pending','verified','rejected'],default:'pending'},

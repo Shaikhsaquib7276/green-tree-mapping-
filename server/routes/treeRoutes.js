@@ -45,7 +45,7 @@ router.post('/',requireAdmin,asyncRoute(async(req,res)=>{
  const zone=await resolveZone(value.zone)
  const hasCoordinates=value.latitude!==undefined&&value.longitude!==undefined
  const tree=await Tree.create({
-  treeId:value.treeId,commonName:value.commonName,scientificName:value.scientificName,zone,condition:value.condition,notes:value.notes,
+  treeId:value.treeId,commonName:value.commonName,scientificName:value.scientificName,zone,condition:value.condition,notes:value.notes,locationLabel:value.locationLabel,
   location:hasCoordinates?{type:'Point',coordinates:[value.longitude,value.latitude]}:null,
   locationVerified:hasCoordinates && value.locationVerified === true,verificationStatus:'pending',createdBy:req.user._id,updatedBy:req.user._id,source:'Admin entry'
  })
@@ -59,7 +59,7 @@ router.patch('/:id',requireAdmin,asyncRoute(async(req,res)=>{
  const tree=await Tree.findById(req.params.id)
  if(!tree)return res.status(404).json({success:false,error:{message:'Tree record not found.'}})
  const zone=await resolveZone(value.zone)
- Object.assign(tree,{treeId:value.treeId,commonName:value.commonName,scientificName:value.scientificName,zone,condition:value.condition,notes:value.notes,updatedBy:req.user._id})
+ Object.assign(tree,{treeId:value.treeId,commonName:value.commonName,scientificName:value.scientificName,zone,condition:value.condition,notes:value.notes,locationLabel:value.locationLabel,updatedBy:req.user._id})
  if(value.clearLocation)tree.location=null
  else if(value.latitude!==undefined&&value.longitude!==undefined)tree.location={type:'Point',coordinates:[value.longitude,value.latitude]}
  if(value.clearLocation)tree.locationVerified=false;else if(value.locationVerified!==undefined)tree.locationVerified=Boolean(value.locationVerified&&tree.location?.coordinates?.length===2)
