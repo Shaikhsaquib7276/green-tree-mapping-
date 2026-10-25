@@ -21,7 +21,18 @@ const clientDist=path.resolve(__dirname,'..','dist')
 const clientIndex=path.join(clientDist,'index.html')
 app.disable('x-powered-by')
 app.set('trust proxy',1)
-app.use(helmet({crossOriginResourcePolicy:{policy:'cross-origin'}}))
+app.use(helmet({
+  crossOriginResourcePolicy:{policy:'cross-origin'},
+  contentSecurityPolicy:{
+    directives:{
+      ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+      imgSrc:["'self'","data:","blob:","https://tile.openstreetmap.org","https://*.tile.openstreetmap.org","https://basemaps.cartocdn.com","https://*.basemaps.cartocdn.com","https://res.cloudinary.com"],
+      connectSrc:["'self'","https://tile.openstreetmap.org","https://*.tile.openstreetmap.org","https://basemaps.cartocdn.com","https://*.basemaps.cartocdn.com"],
+      styleSrc:["'self'","'unsafe-inline'","https://fonts.googleapis.com"],
+      fontSrc:["'self'","data:","https://fonts.gstatic.com"]
+    }
+  }
+}))
 app.use(express.static(clientDist,{index:false,setHeaders(res,filePath){if(path.basename(filePath)==='index.html')res.setHeader('Cache-Control','no-cache')}}))
 app.use(cors({origin:process.env.CLIENT_URL||'http://localhost:5173',credentials:true}))
 app.use(express.json({limit:'1mb'}))
