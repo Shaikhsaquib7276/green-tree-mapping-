@@ -167,35 +167,28 @@ function LeafletMap({ trees = [], greenSpaces = [], editable = false, selectedLo
     markersRef.current = L.layerGroup().addTo(map)
     setMapError(false)
 
-    let activeTileLayer = null
-    let fallbackUsed = false
     let tileLoaded = false
-    let retryTimer = null
-    const fallbackToOsm = () => {
-      if (fallbackUsed) {
-        if (!tileLoaded) setMapError(true)
-        return
-      }
-      fallbackUsed = true
-      if (activeTileLayer) map.removeLayer(activeTileLayer)
-      activeTileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19,
-        attribution: '&copy; OpenStreetMap contributors',
-        crossOrigin: true,
-      })
-      activeTileLayer.on('tileload', () => { tileLoaded = true; setMapError(false) })
-      activeTileLayer.on('tileerror', () => { if (!tileLoaded) setMapError(true) })
-      activeTileLayer.addTo(map)
-    }
-    activeTileLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+    let tileErrors = 0
+    const tileUrl = import.meta.env.VITE_MAP_TILE_URL || 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
+    const tileLayer = L.tileLayer(tileUrl, {
       maxZoom: 19,
-      attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
-      crossOrigin: true,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a>',
+      updateWhenIdle: true,
+      keepBuffer: 2,
     })
-    activeTileLayer.on('tileload', () => { tileLoaded = true; setMapError(false) })
-    activeTileLayer.on('tileerror', fallbackToOsm)
-    activeTileLayer.addTo(map)
-    retryTimer = window.setTimeout(() => { if (!tileLoaded) fallbackToOsm() }, 5000)
+    tileLayer.on('tileload', () => {
+      tileLoaded = true
+      tileErrors = 0
+      setMapError(false)
+    })
+    tileLayer.on('tileerror', () => {
+      tileErrors += 1
+      if (!tileLoaded && tileErrors >= 2) setMapError(true)
+    })
+    tileLayer.addTo(map)
+    const retryTimer = window.setTimeout(() => {
+      if (!tileLoaded) setMapError(true)
+    }, 7000)
 
     const resize = () => map.invalidateSize({ pan: false })
     window.addEventListener('resize', resize)
@@ -329,7 +322,7 @@ function LeafletMap({ trees = [], greenSpaces = [], editable = false, selectedLo
     </div>}
     <div className={`leaflet-frame ${editable ? 'location-picker-map-frame' : ''}`}>
       <div ref={elementRef} className="leaflet-map" aria-label={editable ? 'Search a place or click to choose coordinates' : 'Map of recorded trees'} />
-      {mapError && <div className="map-load-error" role="status"><b>Map tiles could not load.</b><span>Check your internet connection and retry.</span><button type="button" onClick={() => window.location.reload()}>Retry map</button></div>}
+      {mapError && <div className="map-load-error" role="status"><b>Map tiles could not load.</b><span>The no-key OpenStreetMap layer is unavailable right now. Check your connection and retry.</span><button type="button" onClick={() => window.location.reload()}>Retry map</button></div>}
       {!editable && <div className="map-instruction"><Icon name="pin" size={15}/> Click the exact tree location to set coordinates</div>}
     </div>
     {editable && <div className="location-picker-fields">
