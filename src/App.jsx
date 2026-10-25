@@ -168,15 +168,18 @@ function LeafletMap({ trees = [], greenSpaces = [], editable = false, selectedLo
     markersRef.current = L.layerGroup().addTo(map)
     setMapError(false)
 
-    let styleLoaded = false
-    const basemap = maplibreGL({
-      style: 'https://tiles.openfreemap.org/styles/positron',
-      minZoom: 1,
-      attributionControl: true,
-    }).addTo(map)
-    const vectorMap = basemap.getMaplibreMap()
-    vectorMap.on('load', () => {
-      styleLoaded = true
+    let tileLoaded = false
+    let tileErrors = 0
+    const tileUrl = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}'
+    const tileLayer = L.tileLayer(tileUrl, {
+      maxZoom: 19,
+      attribution: '&copy; Esri &mdash; Sources: Esri, HERE, Garmin, USGS, Intermap, INCREMENT P, NRCAN, Esri Japan, METI, TomTom',
+      updateWhenIdle: true,
+      keepBuffer: 2,
+    })
+    tileLayer.on('tileload', () => {
+      tileLoaded = true
+      tileErrors = 0
       setMapError(false)
     })
     vectorMap.on('error', event => {
