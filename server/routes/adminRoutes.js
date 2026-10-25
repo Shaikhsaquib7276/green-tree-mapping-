@@ -14,6 +14,26 @@ const {recordAudit}=require('../services/auditService')
 const router=express.Router()
 const asyncRoute=fn=>(req,res,next)=>Promise.resolve(fn(req,res,next)).catch(next)
 router.use(requireAdmin)
+router.put('/survey-summary',asyncRoute(async(req,res)=>{
+ const count=Joi.number().integer().min(0).max(100000).required()
+ const {error,value}=Joi.object({
+  surveyDate:Joi.date().required(),
+  totalTrees:count,
+  zoneCounts:Joi.array().items(Joi.object({name:Joi.string().trim().min(1).max(100).required(),count:Joi.number().integer().min(0).max(100000).required()})).required(),
+  conditionCounts:Joi.object({healthy:count,needsAttention:count,uncertain:count}).required(),
+  speciesCounts:Joi.array().items(Joi.object({name:Joi.string().trim().min(1).max(120).required(),count:Joi.number().integer().min(0).max(100000).required()})).required(),
+  verificationStatus:Joi.string().valid('verified','provisional').default('provisional'),
+  sourceNotes:Joi.string().trim().max(2000).allow('').default('')
+ }).validate(req.body,{abortEarly:false,convert:true})
+ if(error)return res.status(400).json({success:false,error:{message:error.details[0].message}})
+ const summary=await SurveySummary.findOneAndUpdate(
+  {projectKey:'theem-campus-2026'},
+  {$set:{...value,projectKey:'theem-campus-2026'}},
+  {upsert:true,new:true,runValidators:true,setDefaultsOnInsert:true}
+ )
+ await recordAudit({actor:req.user,action:'upsert',entityType:'SurveySummary',entityId:summary.id,details:{totalTrees:summary.totalTrees}})
+ res.json({success:true,summary})
+}))
 router.post('/reset-content',asyncRoute(async(req,res)=>{
  const {error}=Joi.object({confirmation:Joi.string().valid('CLEAR GREENMAP CONTENT').required()}).validate(req.body)
  if(error)return res.status(400).json({success:false,error:{message:'Type CLEAR GREENMAP CONTENT to confirm the reset.'}})
