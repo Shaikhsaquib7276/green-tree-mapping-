@@ -255,7 +255,7 @@ function App() {
     return () => window.removeEventListener('popstate', onPopState)
   }, [loadAll])
 
-  const individualMapped = useMemo(() => trees.filter(t => t.verificationStatus === 'verified' && t.locationVerified === true && Array.isArray(t.location?.coordinates) && t.location.coordinates.length === 2).length, [trees])
+  const individualMapped = useMemo(() => trees.filter(t => t.verificationStatus === 'verified' && t.locationVerified === true && Array.isArray(t.location?.coordinates) && t.location.coordinates.length === 2 && t.location.coordinates.every(Number.isFinite)).length, [trees])
   const aggregate = summary || SURVEY
   const storedTreeCount = aggregate?.counts?.storedTreeCount ?? treeTotal
   const verifiedTreeCount = aggregate?.counts?.verifiedTreeCount ?? trees.filter(t => t.verificationStatus === 'verified').length
@@ -339,7 +339,8 @@ function App() {
 
   const pageSize = 9
   const cataloguePages = Math.max(1, Math.ceil(filteredTrees.length / pageSize))
-  const pagedTrees = filteredTrees.slice((cataloguePage - 1) * pageSize, cataloguePage * pageSize)
+  const safeCataloguePage = Math.min(cataloguePage, cataloguePages)
+  const pagedTrees = filteredTrees.slice((safeCataloguePage - 1) * pageSize, safeCataloguePage * pageSize)
   const filteredGallery = useMemo(() => galleryFilter === 'all' ? gallery : gallery.filter(image => image.category === galleryFilter), [gallery, galleryFilter])
 
   const bar = (items, maxValue) => <div className="bar-list">{items.map(item => <div className="bar-row" key={item.name}><div className="bar-label"><span>{item.name}</span><strong>{item.count}</strong></div><div className="bar-track"><span style={{ width: `${maxValue ? (item.count / maxValue) * 100 : 0}%`, background: item.color || 'var(--green-600)' }} /></div></div>)}</div>
