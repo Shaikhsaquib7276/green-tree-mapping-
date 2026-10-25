@@ -475,7 +475,12 @@ function App() {
   }
 
   async function saveTree(event) {
-    event.preventDefault(); setAdminMessage(''); setAdminError('')
+    event.preventDefault()
+    // Capture the form/file before the first await; event.currentTarget is only valid
+    // during the synchronous submit event and becomes null in the async continuation.
+    const formElement = event.currentTarget
+    const file = formElement?.querySelector('input[type="file"]')?.files?.[0] || null
+    setAdminMessage(''); setAdminError('')
     const data = { ...treeForm }
     const hasLat = String(data.latitude).trim() !== ''
     const hasLng = String(data.longitude).trim() !== ''
@@ -487,7 +492,6 @@ function App() {
         ? await request(`/trees/${editingTree._id}`, { method: 'PATCH', body: JSON.stringify(payload) })
         : await request('/trees', { method: 'POST', body: JSON.stringify(payload) })
       let saved = result.tree
-      const file = event.currentTarget.querySelector('input[type="file"]')?.files?.[0]
       if (file && saved?._id) {
         const formData = new FormData(); formData.append('image', file); formData.append('altText', data.photoAltText || data.commonName)
         const imageResult = await request(`/trees/${saved._id}/photos`, { method: 'POST', body: formData })
