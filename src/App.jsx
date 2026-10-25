@@ -411,6 +411,103 @@ function App() {
 }
 
 
+
+function parseCountLines(source, label) {
+  const rows = source.split('\n').map(line => line.trim()).filter(Boolean).map((line, index) => {
+    const parts = line.split('|')
+    if (parts.length < 2) throw new Error(`${label}, line ${index + 1}: use Name | Count.`)
+    const name = parts.slice(0, -1).join('|').trim()
+    const countText = parts.at(-1).trim()
+    const count = Number(countText)
+    if (!name || !Number.isInteger(count) || count < 0 || count > 100000) {
+      throw new Error(`${label}, line ${index + 1}: enter a name and a whole count from 0 to 100000.`)
+    }
+    return { name, count }
+  })
+  const names = rows.map(row => row.name.toLowerCase())
+  if (new Set(names).size !== names.length) throw new Error(`${label} contains duplicate names.`)
+  return rows
+}
+
+function SurveySummaryForm({ summary, refresh, report, error, adminMessage, adminError }) {
+  const toLines = items => (items || []).map(item => `${item.name} | ${item.count}`).join('\n')
+  const formFromSummary = item => ({
+    surveyDate: item?.surveyDate ? new Date(item.surveyDate).toISOString().slice(0, 10) : '',
+    totalTrees: String(item?.totalTrees ?? 0),
+    zoneCounts: toLines(item?.zoneCounts),
+    healthy: String(item?.conditionCounts?.healthy ?? 0),
+    needsAttention: String(item?.conditionCounts?.needsAttention ?? 0),
+    uncertain: String(item?.conditionCounts?.uncertain ?? 0),
+    speciesCounts: toLines(item?.speciesCounts),
+    verificationStatus: item?.verificationStatus || 'provisional',
+    sourceNotes: item?.sourceNotes || '',
+  })
+  const [form, setForm] = useState(() => formFromSummary(summary))
+  const [saving, setSaving] = useState(false)
+  useEffect(() => { setForm(formFromSummary(summary)) }, [summary])
+  function change(key, value) { setForm(current => ({ ...current, [key]: value })) }
+  async function submit(event) {
+    event.preventDefault(); report(''); error(''); setSaving(true)
+    try {
+      if (!form.surveyDate) throw new Error('Choose the field survey date.')
+      const totalTrees = Number(form.totalTrees)
+      const conditions = { healthy: Number(form.healthy), needsAttention: Number(form.needsAttention), uncertain: Number(form.uncertain) }
+      if (!Number.isInteger(totalTrees) || totalTrees < 0 || totalTrees > 100000) throw new Error('Total trees must be a whole number from 0 to 100000.')
+      if (Object.values(conditions).some(value => !Number.isInteger(value) || value < 0 || value > 100000)) throw new Error('Condition counts must be whole numbers from 0 to 100000.')
+      const zoneCounts = parseCountLines(form.zoneCounts, 'Zone counts')
+      const speciesCounts = parseCountLines(form.speciesCounts, 'Species counts')
+      if (Object.values(conditions).reduce((sum, value) => sum + value, 0) !== totalTrees) throw new Error('Healthy + Needs attention + Uncertain must equal the total trees.')
+      if (zoneCounts.reduce((sum, item) => sum + item.count, 0) !== totalTrees) throw new Error('The sum of zone counts must equal the total trees.')
+      if (speciesCounts.reduce((sum, item) => sum + item.count, 0) !== totalTrees) throw new Error('The sum of species/category counts must equal the total trees.')
+      const result = await request('/admin/survey-summary', { method: 'PUT', body: JSON.stringify({ surveyDate: form.surveyDate, totalTrees, zoneCounts, conditionCounts: conditions, speciesCounts, verificationStatus: form.verificationStatus, sourceNotes: form.sourceNotes }) })
+      report(`Survey summary saved: ${result.summary.totalTrees} survey-reported trees.`)
+      await refresh()
+    } catch (err) { error(err.message || 'Could not save the survey summary.') }
+    finally { setSaving(false) }
+  }
+  return <div className="admin-workgrid summary-admin-grid">
+    <form className="admin-form" onSubmit={submit}>
+      <span className="section-kicker">AGGREGATE FIELD SURVEY</span><h2>{summary ? 'Edit survey summary' : 'Add survey summary'}</h2>
+      <p className="admin-help">These are survey totals, not individual tree records. Add real observations only; map markers are created separately in Tree records.</p>
+      <div className="form-two"><label>Survey date<input type="date" required value={form.surveyDate} onChange={e=>change('surveyDate',e.target.value)}/></label><label>Total trees in survey<input type="number" min="0" max="100000" required value={form.totalTrees} onChange={e=>change('totalTrees',e.target.value)}/></label></div>
+      <label>Zone counts <span className="optional-label">One per line: Name | Count</span><textarea rows="5" value={form.zoneCounts} onChange={e=>change('zoneCounts',e.target.value)} placeholder={'Main Ground | 10\nVolleyball Ground | 21\nParking | 7\nFlower Garden | 0'}/></label>
+      <div className="form-three"><label>Healthy<input type="number" min="0" value={form.healthy} onChange={e=>change('healthy',e.target.value)}/></label><label>Needs attention<input type="number" min="0" value={form.needsAttention} onChange={e=>change('needsAttention',e.target.value)}/></label><label>Uncertain<input type="number" min="0" value={form.uncertain} onChange={e=>change('uncertain',e.target.value)}/></label></div>
+      <label>Species / category counts <span className="optional-label">One per line: Name | Count</span><textarea rows="7" value={form.speciesCounts} onChange={e=>change('speciesCounts',e.target.value)} placeholder={'Neem | 2\nGulmohar | 9\nOther / not identified | 7'}/></label>
+      <div className="form-two"><label>Summary status<select value={form.verificationStatus} onChange={e=>change('verificationStatus',e.target.value)}><option value="provisional">Provisional</option><option value="verified">Verified</option></select></label><label>Source note<input maxLength="2000" value={form.sourceNotes} onChange={e=>change('sourceNotes',e.target.value)} placeholder="Field report / survey source"/></label></div>
+      {adminError&&<p className="form-error" role="alert">{adminError}</p>}{adminMessage&&<p className="form-success" role="status">{adminMessage}</p>}
+      <button className="button button-primary button-full" disabled={saving}>{saving?'Saving summary…':'Save survey summary'}</button>
+    </form>
+    <aside className="admin-records"><span className="section-kicker">DATA INTEGRITY</span><h2>Keep the numbers consistent</h2><p>The total in the summary appears in Insights. Individual tree records are managed in a separate tab and must be entered one by one.</p><div className="summary-rule"><b>Condition total</b><span>{Number(form.healthy||0)+Number(form.needsAttention||0)+Number(form.uncertain||0)} / {Number(form.totalTrees||0)}</span></div><div className="summary-rule"><b>Zone count total</b><span>{form.zoneCounts.split('\n').map(line=>line.trim()).filter(Boolean).reduce((sum,line)=>sum+Number((line.split('|').at(-1)||'').trim()),0)} / {Number(form.totalTrees||0)}</span></div><div className="summary-rule"><b>Species count total</b><span>{form.speciesCounts.split('\n').map(line=>line.trim()).filter(Boolean).reduce((sum,line)=>sum+Number((line.split('|').at(-1)||'').trim()),0)} / {Number(form.totalTrees||0)}</span></div></aside>
+  </div>
+}
+
+function ContentResetPanel({ report, error, adminMessage, adminError, onReset }) {
+  const [confirmation, setConfirmation] = useState('')
+  const [busy, setBusy] = useState(false)
+  async function reset() {
+    if (confirmation !== 'CLEAR GREENMAP CONTENT') { error('Type CLEAR GREENMAP CONTENT exactly to confirm.'); return }
+    if (!window.confirm('This permanently deletes tree records, campus zones, green spaces, gallery images, survey responses, and the aggregate survey summary. Continue?')) return
+    setBusy(true); report(''); error('')
+    try {
+      const result = await request('/admin/reset-content', { method: 'POST', body: JSON.stringify({ confirmation }) })
+      const counts = result.deleted || {}
+      report(`Content cleared. Trees: ${counts.trees||0}; green spaces: ${counts.greenSpaces||0}; images: ${counts.galleryImages||0}; zones: ${counts.campusZones||0}; responses: ${counts.surveyResponses||0}; summaries: ${counts.surveySummaries||0}. Admin account, sessions and audit history were preserved.`)
+      setConfirmation('')
+      await onReset()
+    } catch (err) { error(err.message || 'Content reset failed.') }
+    finally { setBusy(false) }
+  }
+  return <div className="reset-panel admin-records">
+    <span className="section-kicker">DESTRUCTIVE ACTION / ADMIN ONLY</span><h2>Clear GreenMap content</h2>
+    <p>This removes individual trees, photos linked to those records, campus green spaces, gallery images, campus zones, public survey responses and the aggregate survey summary. It does <b>not</b> delete your administrator account, login sessions or audit history.</p>
+    <p>Make sure you have a backup first. Content can only be added again through the admin forms after the reset.</p>
+    <label>Type <code>CLEAR GREENMAP CONTENT</code> to confirm<input value={confirmation} onChange={e=>setConfirmation(e.target.value)} autoComplete="off" placeholder="Type confirmation phrase"/></label>
+    {adminError&&<p className="form-error" role="alert">{adminError}</p>}{adminMessage&&<p className="form-success" role="status">{adminMessage}</p>}
+    <button className="button button-danger" disabled={busy||confirmation!=='CLEAR GREENMAP CONTENT'} onClick={reset}>{busy?'Clearing content…':'Clear all content data'}</button>
+  </div>
+}
+
+
 function AdminZones({zones,refresh,report,error,adminMessage,adminError}) {
   const [form,setForm]=useState({name:'',description:'',sortOrder:String(zones.length+1)})
   async function submit(e){e.preventDefault();report('');error('');try{await request('/zones',{method:'POST',body:JSON.stringify({...form,sortOrder:Number(form.sortOrder)||0})});setForm({name:'',description:'',sortOrder:String(zones.length+2)});report('Campus zone created.');await refresh()}catch(err){error(err.message)}}
@@ -425,7 +522,7 @@ function AuditLogPanel(){
 }
 
 function AdminSpaces({ spaces, zones, refresh, report, error, adminMessage, adminError }) {
-  const emptyForm = { name: '', description: '', zone: '', latitude: '', longitude: '', locationVerified: false }
+  const emptyForm = { name: '', description: '', zone: '', latitude: '', longitude: '', locationVerified: false, photoAltText: '' }
   const [form, setForm] = useState(emptyForm)
   const [file, setFile] = useState(null)
   const [editing, setEditing] = useState(null)
@@ -434,7 +531,7 @@ function AdminSpaces({ spaces, zones, refresh, report, error, adminMessage, admi
   function edit(space){
     const coords=space.location?.coordinates
     setEditing(space)
-    setForm({name:space.name||'',description:space.description||'',zone:space.zone?._id||'',latitude:coords?String(coords[1]):'',longitude:coords?String(coords[0]):'',locationVerified:Boolean(space.locationVerified)})
+    setForm({name:space.name||'',description:space.description||'',zone:space.zone?._id||'',latitude:coords?String(coords[1]):'',longitude:coords?String(coords[0]):'',locationVerified:Boolean(space.locationVerified),photoAltText:space.photos?.[0]?.altText||space.name||''})
     setFile(null);setLocationPicker(false);report('');error('')
   }
   async function submit(e){
@@ -448,7 +545,7 @@ function AdminSpaces({ spaces, zones, refresh, report, error, adminMessage, admi
         ? await request('/green-spaces/'+editing._id,{method:'PATCH',body:JSON.stringify(payload)})
         : await request('/green-spaces',{method:'POST',body:JSON.stringify(payload)})
       const item=result.item
-      if(file&&item?._id){const data=new FormData();data.append('image',file);await request('/green-spaces/'+item._id+'/photos',{method:'POST',body:data})}
+      if(file&&item?._id){const data=new FormData();data.append('image',file);data.append('altText',form.photoAltText||form.name);await request('/green-spaces/'+item._id+'/photos',{method:'POST',body:data})}
       report(editing?'Green space updated.':'Green space created.')
       reset();await refresh()
     }catch(err){error(err.message)}
@@ -468,6 +565,7 @@ function AdminSpaces({ spaces, zones, refresh, report, error, adminMessage, admi
       <label className="verification-check"><input type="checkbox" checked={Boolean(form.locationVerified)} onChange={e=>setForm({...form,locationVerified:e.target.checked})}/> I verified the exact location on site.</label>
       <button type="button" className="button button-outline button-full" onClick={()=>setLocationPicker(!locationPicker)}><Icon name="pin" size={16}/>{locationPicker?'Hide location picker':'Choose location on map'}</button>
       {locationPicker&&<LeafletMap trees={[]} editable selectedLocation={form.latitude&&form.longitude?{lat:Number(form.latitude),lng:Number(form.longitude)}:null} onPick={point=>setForm({...form,latitude:String(point.lat),longitude:String(point.lng)})}/>}
+      <label>Photo description (alt text)<input maxLength="180" value={form.photoAltText} onChange={e=>setForm({...form,photoAltText:e.target.value})} placeholder="Describe the photograph"/></label>
       <label>Photograph <span className="optional-label">Optional · JPG, PNG or WEBP, up to 5 MB</span><input type="file" accept="image/jpeg,image/png,image/webp" onChange={e=>setFile(e.target.files?.[0]||null)}/></label>
       {adminError&&<p className="form-error" role="alert">{adminError}</p>}{adminMessage&&<p className="form-success" role="status">{adminMessage}</p>}
       <button className="button button-primary button-full">{editing?'Save changes':'Create green space'}</button>{editing&&<button type="button" className="button button-outline button-full" onClick={reset}>Cancel edit</button>}
