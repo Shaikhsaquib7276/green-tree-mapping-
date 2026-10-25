@@ -25,11 +25,18 @@ app.use(helmet({
   crossOriginResourcePolicy:{policy:'cross-origin'},
   contentSecurityPolicy:{
     directives:{
-      ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+      defaultSrc:["'self'"],
+      baseUri:["'self'"],
+      fontSrc:["'self'","data:","https://fonts.gstatic.com"],
+      formAction:["'self'"],
+      frameAncestors:["'self'"],
       imgSrc:["'self'","data:","blob:","https://tile.openstreetmap.org","https://*.tile.openstreetmap.org","https://basemaps.cartocdn.com","https://*.basemaps.cartocdn.com","https://res.cloudinary.com"],
-      connectSrc:["'self'","https://tile.openstreetmap.org","https://*.tile.openstreetmap.org","https://basemaps.cartocdn.com","https://*.basemaps.cartocdn.com"],
+      objectSrc:["'none'"],
+      scriptSrc:["'self'"],
+      scriptSrcAttr:["'none'"],
       styleSrc:["'self'","'unsafe-inline'","https://fonts.googleapis.com"],
-      fontSrc:["'self'","data:","https://fonts.gstatic.com"]
+      connectSrc:["'self'","https://tile.openstreetmap.org","https://*.tile.openstreetmap.org","https://basemaps.cartocdn.com","https://*.basemaps.cartocdn.com"],
+      upgradeInsecureRequests:[]
     }
   }
 }))
