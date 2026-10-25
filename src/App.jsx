@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import L from 'leaflet'
+import { maplibreGL } from '@maplibre/maplibre-gl-leaflet'
 import 'leaflet/dist/leaflet.css'
 import './App.css'
 
@@ -181,14 +182,15 @@ function LeafletMap({ trees = [], greenSpaces = [], editable = false, selectedLo
       tileErrors = 0
       setMapError(false)
     })
-    tileLayer.on('tileerror', () => {
-      tileErrors += 1
-      if (!tileLoaded && tileErrors >= 2) setMapError(true)
+    vectorMap.on('error', event => {
+      if (!styleLoaded) {
+        console.warn('OpenFreeMap basemap failed to load:', event?.error?.message || 'unknown map error')
+        setMapError(true)
+      }
     })
-    tileLayer.addTo(map)
     const retryTimer = window.setTimeout(() => {
-      if (!tileLoaded) setMapError(true)
-    }, 7000)
+      if (!styleLoaded) setMapError(true)
+    }, 12000)
 
     const resize = () => map.invalidateSize({ pan: false })
     window.addEventListener('resize', resize)
@@ -322,7 +324,7 @@ function LeafletMap({ trees = [], greenSpaces = [], editable = false, selectedLo
     </div>}
     <div className={`leaflet-frame ${editable ? 'location-picker-map-frame' : ''}`}>
       <div ref={elementRef} className="leaflet-map" aria-label={editable ? 'Search a place or click to choose coordinates' : 'Map of recorded trees'} />
-      {mapError && <div className="map-load-error" role="status"><b>Map tiles could not load.</b><span>The no-key OpenStreetMap layer is unavailable right now. Check your connection and retry.</span><button type="button" onClick={() => window.location.reload()}>Retry map</button></div>}
+      {mapError && <div className="map-load-error" role="status"><b>Map tiles could not load.</b><span>OpenFreeMap could not load the street map. Check your connection and retry.</span><button type="button" onClick={() => window.location.reload()}>Retry map</button></div>}
       {!editable && <div className="map-instruction"><Icon name="pin" size={15}/> Click the exact tree location to set coordinates</div>}
     </div>
     {editable && <div className="location-picker-fields">

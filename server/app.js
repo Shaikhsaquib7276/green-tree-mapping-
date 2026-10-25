@@ -34,6 +34,7 @@ app.use(helmet({
       objectSrc:["'none'"],
       scriptSrc:["'self'"],
       scriptSrcAttr:["'none'"],
+      workerSrc:["'self'","blob:"],
       styleSrc:["'self'","'unsafe-inline'","https://fonts.googleapis.com"],
       connectSrc:["'self'","https://server.arcgisonline.com","https://nominatim.openstreetmap.org"],
       upgradeInsecureRequests:[]
@@ -66,7 +67,7 @@ function sendClientIndex(res){
  res.setHeader('Cache-Control','no-store, no-cache, must-revalidate, proxy-revalidate')
  res.setHeader('Pragma','no-cache')
  res.setHeader('Expires','0')
- res.setHeader('X-GreenMap-Frontend','osm-no-key-v2')
+ res.setHeader('X-GreenMap-Frontend','openfreemap-maplibre-v1')
  return res.sendFile(clientIndex)
 }
 app.get('/',(_req,res)=>{if(fs.existsSync(clientIndex))return sendClientIndex(res);return res.json({ok:true,name:'GreenMap API',message:'GreenMap backend is running.',health:'/api/health',apiBase:'/api/v1'})})
