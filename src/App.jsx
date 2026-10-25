@@ -169,10 +169,10 @@ function LeafletMap({ trees = [], greenSpaces = [], editable = false, selectedLo
 
     let tileLoaded = false
     let tileErrors = 0
-    const tileUrl = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
+    const tileUrl = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}'
     const tileLayer = L.tileLayer(tileUrl, {
       maxZoom: 19,
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a>',
+      attribution: '&copy; Esri &mdash; Sources: Esri, HERE, Garmin, USGS, Intermap, INCREMENT P, NRCAN, Esri Japan, METI, TomTom',
       updateWhenIdle: true,
       keepBuffer: 2,
     })
