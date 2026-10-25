@@ -280,9 +280,6 @@ function App() {
 
   const storedTreeCount = aggregate?.counts?.storedTreeCount ?? treeTotal
   const verifiedTreeCount = aggregate?.counts?.verifiedTreeCount ?? trees.filter(t => t.verificationStatus === 'verified').length
-  const aggregate = summary || SURVEY
-  const storedTreeCount = aggregate?.counts?.storedTreeCount ?? treeTotal
-  const verifiedTreeCount = aggregate?.counts?.verifiedTreeCount ?? trees.filter(t => t.verificationStatus === 'verified').length
   const title = ({ home: 'A living record of campus nature', map: 'Explore the green cover', trees: 'Tree catalogue', detail: activeTree?.commonName || 'Tree details', statistics: 'The story in the numbers', spaces: 'Campus green spaces', gallery: 'Field notes in pictures', survey: 'Your voice, greener campus', about: 'A small step toward a greener campus', admin: 'Admin workspace' })[page] || 'GreenMap'
 
   const openTree = tree => { setActiveTree(tree); go('detail') }
