@@ -12,7 +12,7 @@
     "dev:web": "vite --host 0.0.0.0",
     "dev:api": "npm run dev --workspace=greenmap-server",
     "build": "vite build",
-    "start": "npm run build && node server/index.js",
+    "start": "node server/index.js",
     "preview": "vite preview",
     "lint": "oxlint",
     "admin:create": "npm run admin:create --workspace=greenmap-server",
