@@ -26,8 +26,8 @@ app.use(helmet({
   contentSecurityPolicy:{
     directives:{
       ...helmet.contentSecurityPolicy.getDefaultDirectives(),
-      imgSrc:["'self'","data:","blob:","https://*.tile.openstreetmap.org","https://*.basemaps.cartocdn.com","https://res.cloudinary.com"],
-      connectSrc:["'self'","https://*.tile.openstreetmap.org","https://*.basemaps.cartocdn.com"],
+      imgSrc:["'self'","data:","blob:","https://tile.openstreetmap.org","https://*.tile.openstreetmap.org","https://basemaps.cartocdn.com","https://*.basemaps.cartocdn.com","https://res.cloudinary.com"],
+      connectSrc:["'self'","https://tile.openstreetmap.org","https://*.tile.openstreetmap.org","https://basemaps.cartocdn.com","https://*.basemaps.cartocdn.com"],
       styleSrc:["'self'","'unsafe-inline'","https://fonts.googleapis.com"],
       fontSrc:["'self'","data:","https://fonts.gstatic.com"]
     }
