@@ -173,7 +173,7 @@ function LeafletMap({ trees = [], greenSpaces = [], editable = false, selectedLo
       style: 'https://tiles.openfreemap.org/styles/positron',
       minZoom: 1,
       attributionControl: true,
-    })
+    }).addTo(map)
     const vectorMap = basemap.getMaplibreMap()
     vectorMap.on('load', () => {
       styleLoaded = true
@@ -185,7 +185,6 @@ function LeafletMap({ trees = [], greenSpaces = [], editable = false, selectedLo
         setMapError(true)
       }
     })
-    basemap.addTo(map)
     const retryTimer = window.setTimeout(() => {
       if (!styleLoaded) setMapError(true)
     }, 12000)
