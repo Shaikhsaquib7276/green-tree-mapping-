@@ -105,7 +105,7 @@ function LeafletMap({ trees = [], greenSpaces = [], editable = false, selectedLo
   onPickRef.current = onPick
 
   useEffect(() => {
-    if (selectedLocationLabel) setPlaceQuery(selectedLocationLabel)
+    setPlaceQuery(selectedLocationLabel || '')
   }, [selectedLocationLabel])
 
   async function searchPlaces(event) {
@@ -319,11 +319,11 @@ function LeafletMap({ trees = [], greenSpaces = [], editable = false, selectedLo
       <div className="location-picker-heading"><h3>Select Location on Map</h3><p>Search for a campus, landmark or address, or click on the map to set the exact location.</p></div>
       <button type="button" className="location-picker-close" onClick={onClose}><Icon name="chevron-up" size={17}/> Hide location picker</button>
     </div>}
-    {editable && <form className="place-search-panel" onSubmit={searchPlaces}>
-      <div className="place-search-row"><Icon name="search" size={18}/><input aria-label="Search for a place or address" value={placeQuery} onChange={event => { setPlaceQuery(event.target.value); setPlaceSearchError(''); setPlaceResults([]) }} placeholder="Search campus, landmark or address…"/>{placeQuery && <button type="button" className="place-clear-button" aria-label="Clear place search" onClick={() => {setPlaceQuery('');setPlaceResults([]);setPlaceSearchError('')}}>×</button>}<button type="submit" disabled={placeSearchBusy}><Icon name="search" size={16}/>{placeSearchBusy ? 'Finding…' : 'Find'}</button></div>
+    {editable && <div className="place-search-panel">
+      <div className="place-search-row"><Icon name="search" size={18}/><input aria-label="Search for a place or address" value={placeQuery} onKeyDown={event => { if(event.key === 'Enter'){event.preventDefault();searchPlaces()} }} onChange={event => { setPlaceQuery(event.target.value); setPlaceSearchError(''); setPlaceResults([]) }} placeholder="Search campus, landmark or address…"/>{placeQuery && <button type="button" className="place-clear-button" aria-label="Clear place search" onClick={() => {setPlaceQuery('');setPlaceResults([]);setPlaceSearchError('')}}>×</button>}<button type="button" onClick={searchPlaces} disabled={placeSearchBusy}><Icon name="search" size={16}/>{placeSearchBusy ? 'Finding…' : 'Find'}</button></div>
       {placeSearchError && <p className="place-search-error" role="status">{placeSearchError}</p>}
       {placeResults.length > 0 && <div className="place-search-results" role="listbox" aria-label="Place search results">{placeResults.map((place,index) => <button className="place-search-result" type="button" key={place.place_id || `${place.lat}-${place.lon}-${index}`} onClick={() => choosePlace(place)}><span className="place-result-icon"><Icon name="pin" size={17}/></span><span><b>{place.name || place.display_name.split(',')[0]}</b><small>{place.display_name}</small></span></button>)}</div>}
-    </form>}
+    </div>}
     <div className={`leaflet-frame ${editable ? 'location-picker-map-frame' : ''}`}>
       <div ref={elementRef} className="leaflet-map" aria-label={editable ? 'Search a place or click to choose coordinates' : 'Map of recorded trees'} />
       {mapError && <div className="map-load-error" role="status"><b>Map tiles could not load.</b><span>Check your internet connection and retry.</span><button type="button" onClick={() => window.location.reload()}>Retry map</button></div>}
