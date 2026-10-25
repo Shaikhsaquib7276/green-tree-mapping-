@@ -30,12 +30,12 @@ app.use(helmet({
       fontSrc:["'self'","data:","https://fonts.gstatic.com"],
       formAction:["'self'"],
       frameAncestors:["'self'"],
-      imgSrc:["'self'","data:","blob:","https://tile.openstreetmap.org","https://*.tile.openstreetmap.org","https://res.cloudinary.com"],
+      imgSrc:["'self'","data:","blob:","https://server.arcgisonline.com","https://res.cloudinary.com"],
       objectSrc:["'none'"],
       scriptSrc:["'self'"],
       scriptSrcAttr:["'none'"],
       styleSrc:["'self'","'unsafe-inline'","https://fonts.googleapis.com"],
-      connectSrc:["'self'","https://tile.openstreetmap.org","https://*.tile.openstreetmap.org","https://nominatim.openstreetmap.org"],
+      connectSrc:["'self'","https://server.arcgisonline.com","https://nominatim.openstreetmap.org"],
       upgradeInsecureRequests:[]
     }
   }
