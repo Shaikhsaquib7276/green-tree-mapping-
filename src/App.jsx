@@ -90,13 +90,47 @@ function Icon({ name, size = 18 }) {
   return <svg aria-hidden="true" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">{paths[name] || paths.leaf}</svg>
 }
 
-function LeafletMap({ trees = [], greenSpaces = [], editable = false, selectedLocation = null, focusLocation = null, onPick }) {
+function LeafletMap({ trees = [], greenSpaces = [], editable = false, selectedLocation = null, selectedLocationLabel = '', focusLocation = null, onPick }) {
   const elementRef = useRef(null)
   const [mapError, setMapError] = useState(false)
+  const [placeQuery, setPlaceQuery] = useState(selectedLocationLabel || '')
+  const [placeResults, setPlaceResults] = useState([])
+  const [placeSearchBusy, setPlaceSearchBusy] = useState(false)
+  const [placeSearchError, setPlaceSearchError] = useState('')
+  const geocodeRequestRef = useRef(0)
   const mapRef = useRef(null)
   const markersRef = useRef(null)
   const onPickRef = useRef(onPick)
   onPickRef.current = onPick
+
+  useEffect(() => {
+    if (selectedLocationLabel) setPlaceQuery(selectedLocationLabel)
+  }, [selectedLocationLabel])
+
+  async function searchPlaces(event) {
+    event?.preventDefault()
+    const query = placeQuery.trim()
+    if (query.length < 3) { setPlaceSearchError('Enter at least 3 characters to search.'); setPlaceResults([]); return }
+    setPlaceSearchBusy(true); setPlaceSearchError(''); setPlaceResults([])
+    try {
+      const params = new URLSearchParams({ q: query, format: 'jsonv2', limit: '5', countrycodes: 'in', addressdetails: '1', 'accept-language': 'en' })
+      const response = await fetch('https://nominatim.openstreetmap.org/search?' + params.toString(), { headers: { Accept: 'application/json' } })
+      if (!response.ok) throw new Error('Place search service is temporarily unavailable.')
+      const results = await response.json()
+      setPlaceResults(Array.isArray(results) ? results.filter(item => Number.isFinite(Number(item.lat)) && Number.isFinite(Number(item.lon)) && item.display_name) : [])
+      if (!Array.isArray(results) || results.length === 0) setPlaceSearchError('No places found. Try a nearby landmark or full address.')
+    } catch (error) {
+      setPlaceSearchError(error.message || 'Could not search places. You can still select a point on the map.')
+    } finally { setPlaceSearchBusy(false) }
+  }
+
+  function choosePlace(place) {
+    const point = { lat: Number(place.lat), lng: Number(place.lon), label: place.display_name }
+    geocodeRequestRef.current += 1
+    setPlaceQuery(place.display_name); setPlaceResults([]); setPlaceSearchError('')
+    onPickRef.current?.(point)
+    mapRef.current?.flyTo([point.lat, point.lng], 17, { duration: 0.45 })
+  }
 
   useEffect(() => {
     if (!elementRef.current || mapRef.current) return
@@ -157,7 +191,18 @@ function LeafletMap({ trees = [], greenSpaces = [], editable = false, selectedLo
   useEffect(() => {
     const map = mapRef.current
     if (!map) return
-    const handlePick = event => onPickRef.current?.({ lat: Number(event.latlng.lat.toFixed(6)), lng: Number(event.latlng.lng.toFixed(6)) })
+    const handlePick = event => {
+      const point = { lat: Number(event.latlng.lat.toFixed(6)), lng: Number(event.latlng.lng.toFixed(6)) }
+      const requestId = ++geocodeRequestRef.current
+      onPickRef.current?.(point)
+      map.setView([point.lat, point.lng], Math.max(map.getZoom(), 17))
+      fetch('https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=' + point.lat + '&lon=' + point.lng + '&zoom=18&addressdetails=1&accept-language=en', { headers: { Accept: 'application/json' } })
+        .then(response => { if (!response.ok) throw new Error('Reverse geocoding unavailable'); return response.json() })
+        .then(result => {
+          if (requestId === geocodeRequestRef.current && result?.display_name) onPickRef.current?.({ ...point, label: result.display_name })
+        })
+        .catch(() => { /* Exact coordinates have already been selected; the address can remain blank. */ })
+    }
     if (editable) {
       map.on('click', handlePick)
       map.getContainer().style.cursor = 'crosshair'
@@ -221,14 +266,20 @@ function LeafletMap({ trees = [], greenSpaces = [], editable = false, selectedLo
       points.push([CAMPUS.lat, CAMPUS.lng])
     }
     if (selectedLocation && Number.isFinite(selectedLocation.lat) && Number.isFinite(selectedLocation.lng)) {
-      L.marker([selectedLocation.lat, selectedLocation.lng]).bindPopup('Selected location').addTo(layer)
-      map.setView([selectedLocation.lat, selectedLocation.lng], 16)
+      const selectedContent = document.createElement('div')
+      const selectedTitle = document.createElement('strong')
+      selectedTitle.textContent = selectedLocationLabel || 'Selected place'
+      const selectedCoordinates = document.createElement('p')
+      selectedCoordinates.textContent = selectedLocation.lat.toFixed(6) + ', ' + selectedLocation.lng.toFixed(6)
+      selectedContent.append(selectedTitle, selectedCoordinates)
+      L.marker([selectedLocation.lat, selectedLocation.lng]).bindPopup(selectedContent).addTo(layer)
+      map.setView([selectedLocation.lat, selectedLocation.lng], 17)
     } else if (recordedPointCount > 0) {
       map.fitBounds(L.latLngBounds(points).pad(0.16), { maxZoom: 16 })
     } else {
       map.setView([CAMPUS.lat, CAMPUS.lng], 15)
     }
-  }, [trees, greenSpaces, selectedLocation])
+  }, [trees, greenSpaces, selectedLocation, selectedLocationLabel])
 
   useEffect(() => {
     const map = mapRef.current
@@ -237,7 +288,17 @@ function LeafletMap({ trees = [], greenSpaces = [], editable = false, selectedLo
     if (Number.isFinite(lat) && Number.isFinite(lng)) map.setView([lat, lng], 17)
   }, [focusLocation, editable])
 
-  return <div className="leaflet-frame"><div ref={elementRef} className="leaflet-map" aria-label={editable ? 'Click to choose tree coordinates' : 'Map of recorded trees'} />{mapError && <div className="map-load-error" role="status"><b>Map tiles could not load.</b><span>Check your internet connection and retry.</span><button type="button" onClick={() => window.location.reload()}>Retry map</button></div>}{editable && <div className="map-instruction"><Icon name="pin" size={15}/> Click the exact tree location to set coordinates</div>}</div>
+  return <div className="leaflet-frame">
+    <div ref={elementRef} className="leaflet-map" aria-label={editable ? 'Search a place or click to choose coordinates' : 'Map of recorded trees'} />
+    {editable && <form className="place-search-panel" onSubmit={searchPlaces}>
+      <div className="place-search-row"><Icon name="search" size={17}/><input aria-label="Search for a place or address" value={placeQuery} onChange={event => { setPlaceQuery(event.target.value); setPlaceSearchError(''); setPlaceResults([]) }} placeholder="Search campus, landmark or address…"/><button type="submit" disabled={placeSearchBusy}>{placeSearchBusy ? 'Searching…' : 'Search'}</button></div>
+      {placeSearchError && <p className="place-search-error" role="status">{placeSearchError}</p>}
+      {placeResults.length > 0 && <div className="place-search-results" role="listbox" aria-label="Place search results">{placeResults.map((place,index) => <button className="place-search-result" type="button" key={place.place_id || `${place.lat}-${place.lon}-${index}`} onClick={() => choosePlace(place)}><span className="place-result-icon"><Icon name="pin" size={16}/></span><span><b>{place.name || place.display_name.split(',')[0]}</b><small>{place.display_name}</small></span></button>)}</div>}
+      <p className="place-search-help">Choose a result to fill the place and coordinates, or click the exact location on the map.</p>
+    </form>}
+    {mapError && <div className="map-load-error" role="status"><b>Map tiles could not load.</b><span>Check your internet connection and retry.</span><button type="button" onClick={() => window.location.reload()}>Retry map</button></div>}
+    {editable && <div className="map-instruction"><Icon name="pin" size={15}/> Click the exact tree location to set coordinates</div>}
+  </div>
 }
 
 function EmptyState({ icon = 'tree', title, text, action }) {
@@ -272,7 +333,7 @@ function App() {
   const [adminError, setAdminError] = useState('')
   const [editingTree, setEditingTree] = useState(null)
   const [locationPicker, setLocationPicker] = useState(false)
-  const [treeForm, setTreeForm] = useState({ treeId: '', commonName: '', scientificName: '', zone: '', condition: 'healthy', notes: '', latitude: '', longitude: '', locationVerified: false, photoAltText: '' })
+  const [treeForm, setTreeForm] = useState({ treeId: '', commonName: '', scientificName: '', zone: '', condition: 'healthy', notes: '', latitude: '', longitude: '', locationLabel: '', locationVerified: false, photoAltText: '' })
   const [surveyForm, setSurveyForm] = useState({ ageGroup: '', zone: '', awareness: '', greenSpaceImportance: '', treeCareAwareness: '', participationInterest: '', suggestions: '' })
 
   const go = useCallback((next, replace = false) => {
@@ -343,11 +404,11 @@ function App() {
   const title = ({ home: 'A living record of campus nature', map: 'Explore the green cover', trees: 'Tree catalogue', detail: activeTree?.commonName || 'Tree details', statistics: 'The story in the numbers', spaces: 'Campus green spaces', gallery: 'Field notes in pictures', survey: 'Your voice, greener campus', about: 'A small step toward a greener campus', admin: 'Admin workspace' })[page] || 'GreenMap'
 
   const openTree = tree => { setActiveTree(tree); go('detail') }
-  const resetTreeForm = () => { setEditingTree(null); setTreeForm({ treeId: '', commonName: '', scientificName: '', zone: zones[0]?._id || '', condition: 'healthy', notes: '', latitude: '', longitude: '', locationVerified: false, photoAltText: '' }); setLocationPicker(false) }
+  const resetTreeForm = () => { setEditingTree(null); setTreeForm({ treeId: '', commonName: '', scientificName: '', zone: zones[0]?._id || '', condition: 'healthy', notes: '', latitude: '', longitude: '', locationLabel: '', locationVerified: false, photoAltText: '' }); setLocationPicker(false) }
   const editTree = tree => {
     const coords = tree.location?.coordinates
     setEditingTree(tree)
-    setTreeForm({ treeId: tree.treeId || '', commonName: tree.commonName || '', scientificName: tree.scientificName || '', zone: tree.zone?._id || tree.zone || '', condition: tree.condition || 'healthy', notes: tree.notes || '', latitude: coords ? String(coords[1]) : '', longitude: coords ? String(coords[0]) : '', locationVerified: Boolean(tree.locationVerified), photoAltText: tree.photos?.[0]?.altText || tree.commonName || '' })
+    setTreeForm({ treeId: tree.treeId || '', commonName: tree.commonName || '', scientificName: tree.scientificName || '', zone: tree.zone?._id || tree.zone || '', condition: tree.condition || 'healthy', notes: tree.notes || '', latitude: coords ? String(coords[1]) : '', longitude: coords ? String(coords[0]) : '', locationLabel: tree.locationLabel || '', locationVerified: Boolean(tree.locationVerified), photoAltText: tree.photos?.[0]?.altText || tree.commonName || '' })
     setLocationPicker(false)
     setAdminMessage('')
     setAdminError('')
@@ -376,7 +437,7 @@ function App() {
     if (hasLat !== hasLng) { setAdminError('Enter both latitude and longitude, or leave both blank.'); return }
     if (hasLat && (!Number.isFinite(Number(data.latitude)) || !Number.isFinite(Number(data.longitude)) || Math.abs(Number(data.latitude)) > 90 || Math.abs(Number(data.longitude)) > 180)) { setAdminError('Enter valid latitude and longitude values.'); return }
     try {
-      const payload = { treeId: data.treeId, commonName: data.commonName, scientificName: data.scientificName, zone: data.zone || null, condition: data.condition, notes: data.notes, clearLocation: !hasLat, ...(hasLat ? { latitude: Number(data.latitude), longitude: Number(data.longitude), locationVerified: Boolean(hasLat) } : {}) }
+      const payload = { treeId: data.treeId, commonName: data.commonName, scientificName: data.scientificName, zone: data.zone || null, condition: data.condition, notes: data.notes, locationLabel: hasLat ? data.locationLabel : '', clearLocation: !hasLat, ...(hasLat ? { latitude: Number(data.latitude), longitude: Number(data.longitude), locationVerified: Boolean(hasLat) } : {}) }
       const result = editingTree
         ? await request(`/trees/${editingTree._id}`, { method: 'PATCH', body: JSON.stringify(payload) })
         : await request('/trees', { method: 'POST', body: JSON.stringify(payload) })
@@ -456,7 +517,7 @@ function App() {
 
       {page === 'about' && <section className="content-page about-page"><div className="about-heading"><span className="section-kicker">ABOUT THE PROJECT</span><h1>{title}</h1><p>GreenMap is a digital field notebook for campus trees and green-cover documentation at Theem College of Engineering, Betegaon, Chilhar Road.</p></div><div className="about-grid"><article><span>01</span><Icon name="tree" size={24}/><h2>Record honestly</h2><p>The survey summary records {surveyTotal} trees. Tree-level details appear only when real individual records are entered into the database.</p></article><article><span>02</span><Icon name="pin" size={24}/><h2>Map what is known</h2><p>Map markers require actual saved coordinates. Unknown locations remain unknown rather than being estimated from a zone name.</p></article><article><span>03</span><Icon name="shield" size={24}/><h2>Keep data accountable</h2><p>Only authorized administrators can create, verify, edit or remove official tree records. Public survey feedback is private.</p></article></div><div className="survey-caveat"><b>Field inventory note</b><p>Survey date: {surveyDate}. Condition totals: {surveyConditions.map(item => `${item.count} ${item.name.toLowerCase()}`).join(', ')}. Common names were recorded from field notes; scientific names require independent verification.</p></div></section>}
 
-      {page === 'admin' && <section className="content-page admin-page"><div className="page-heading admin-page-heading"><div><span className="section-kicker">GREENMAP / SECURE AREA</span><h1>{sessionUser ? 'Admin workspace' : 'Authorized access only'}</h1><p>{sessionUser ? 'Manage individually recorded trees, campus spaces and field documentation.' : 'Sign in to manage verified tree records, campus zones and field documentation.'}</p></div>{sessionUser && <button className="button button-outline" onClick={logout}>Sign out</button>}</div>{!sessionUser ? <form className="login-card" onSubmit={submitLogin}><div className="login-lock"><Icon name="lock" size={25}/></div><span className="section-kicker">PROTECTED ADMIN SESSION</span><h2>Welcome back.</h2><p>Use the administrator account provisioned on the server. Public registration is disabled.</p><label>Admin username<input name="username" autoComplete="username" required placeholder="Username"/></label><label>Password<input name="password" type="password" autoComplete="current-password" minLength="6" required placeholder="Password"/></label>{loginError && <p className="form-error" role="alert">{loginError}</p>}<button className="button button-primary button-full" disabled={loginBusy}>{loginBusy ? 'Signing in…' : 'Sign in securely'} <Icon name="arrow" size={16}/></button><p className="form-privacy">Only a provisioned active administrator can sign in.</p></form> : <><div className="admin-tabs">{[['trees','Tree records'],['import','Import CEP data'],['spaces','Green spaces'],['gallery','Gallery'],['responses','Survey responses'],['zones','Campus zones'],['summary','Survey summary'],['logs','Audit log'],['reset','Reset content']].map(([v,label]) => <button key={v} className={adminTab === v ? 'selected' : ''} onClick={() => {setAdminTab(v); setAdminMessage('');setAdminError('')}}>{label}</button>)}</div>{adminTab === 'trees' && <div className="admin-workgrid"><form className="admin-form" onSubmit={saveTree}><div className="form-heading"><div><span className="section-kicker">{editingTree ? 'EDIT RECORD' : 'NEW INDIVIDUAL RECORD'}</span><h2>{editingTree ? 'Update tree details' : 'Add a tree'}</h2></div>{editingTree && <button type="button" className="text-button" onClick={resetTreeForm}>Cancel edit</button>}</div><div className="form-two"><label>Tree ID<input value={treeForm.treeId} required onChange={e=>setTreeForm({...treeForm,treeId:e.target.value})} placeholder="e.g. TG-001"/></label><label>Common name<input value={treeForm.commonName} required onChange={e=>setTreeForm({...treeForm,commonName:e.target.value})} placeholder="Recorded name"/></label></div><label>Scientific name <span className="optional-label">If verified</span><input value={treeForm.scientificName} onChange={e=>setTreeForm({...treeForm,scientificName:e.target.value})} placeholder="Leave blank if unknown"/></label><div className="form-two"><label>Zone<select value={treeForm.zone} onChange={e=>setTreeForm({...treeForm,zone:e.target.value})}><option value="">Not assigned</option>{zones.map(z=><option key={z._id||z.slug} value={z._id||z.slug}>{z.name}</option>)}</select></label><label>Observed condition<select value={treeForm.condition} onChange={e=>setTreeForm({...treeForm,condition:e.target.value})}><option value="healthy">Healthy</option><option value="needs_attention">Needs attention</option><option value="uncertain">Uncertain</option></select></label></div><div className="form-two"><label>Latitude<input inputMode="decimal" value={treeForm.latitude} onChange={e=>setTreeForm({...treeForm,latitude:e.target.value})} placeholder="Optional"/></label><label>Longitude<input inputMode="decimal" value={treeForm.longitude} onChange={e=>setTreeForm({...treeForm,longitude:e.target.value})} placeholder="Optional"/></label></div><p className="admin-help">Selecting a point on the map saves its coordinates. Only mark a point after confirming it matches the real tree location.</p><button type="button" className="button button-outline button-full" onClick={()=>setLocationPicker(!locationPicker)}><Icon name="pin" size={16}/>{locationPicker ? 'Hide location picker' : 'Choose location on map'}</button>{locationPicker && <LeafletMap trees={[]} editable selectedLocation={treeForm.latitude && treeForm.longitude ? {lat:Number(treeForm.latitude),lng:Number(treeForm.longitude)} : null} onPick={point=>setTreeForm({...treeForm,latitude:String(point.lat),longitude:String(point.lng)})}/>}<label>Field notes<textarea rows="3" value={treeForm.notes} onChange={e=>setTreeForm({...treeForm,notes:e.target.value})} placeholder="Observations, source, maintenance needs…"/></label><label>Photo description (alt text)<input value={treeForm.photoAltText} onChange={e=>setTreeForm({...treeForm,photoAltText:e.target.value})} maxLength="180" placeholder="Describe the tree photo for accessibility"/></label><label>Tree photograph <span className="optional-label">JPG, PNG or WEBP · up to 5 MB</span><input type="file" accept="image/jpeg,image/png,image/webp"/></label>{adminError && <p className="form-error" role="alert">{adminError}</p>}{adminMessage && <p className="form-success" role="status">{adminMessage}</p>}<button className="button button-primary button-full" type="submit"><Icon name="plus" size={16}/>{editingTree ? 'Save changes' : 'Create pending record'}</button></form><div className="admin-records"><div className="section-heading"><div><span className="section-kicker">INVENTORY ADMIN</span><h2>Individual tree records</h2></div><span className="chart-total">{trees.length}</span></div>{trees.length ? <div className="record-list">{trees.map(tree=><article className="record-row" key={tree._id}><span className="record-tree-icon"><Icon name="tree" size={19}/></span><div className="record-main"><b>{tree.commonName}</b><small>{tree.treeId} · {tree.zone?.name || 'No zone'}</small><span className={`record-status ${tree.verificationStatus}`}>{tree.verificationStatus || 'pending'}</span></div><div className="record-actions"><button title="Edit record" onClick={()=>editTree(tree)}>Edit</button>{tree.verificationStatus !== 'verified' && <button title="Verify and publish" onClick={()=>verifyTree(tree,'verified')}>Verify</button>}<button title="Delete record" className="danger-action" onClick={()=>deleteTree(tree)}>Delete</button></div></article>)}</div> : <EmptyState title="No individual records yet" text="Add a tree from the actual field survey. The aggregate count of 38 is not auto-expanded into invented records."/>}</div></div>}{adminTab === 'import' && <CepImportPanel refresh={loadAll} report={setAdminMessage} error={setAdminError} adminMessage={adminMessage} adminError={adminError}/>}{adminTab === 'spaces' && <AdminSpaces spaces={spaces} zones={zones} refresh={loadAll} report={setAdminMessage} error={setAdminError} adminMessage={adminMessage} adminError={adminError}/ >}{adminTab === 'zones' && <AdminZones zones={zones} refresh={loadAll} report={setAdminMessage} error={setAdminError} adminMessage={adminMessage} adminError={adminError}/ >}{adminTab === 'logs' && <AuditLogPanel/>}{adminTab === 'gallery' && <AdminGallery gallery={gallery} refresh={loadAll} report={setAdminMessage} error={setAdminError} adminMessage={adminMessage} adminError={adminError}/ >}{adminTab === 'responses' && <SurveyResponses/>}{adminTab === 'summary' && <SurveySummaryForm summary={summary} refresh={loadAll} report={setAdminMessage} error={setAdminError} adminMessage={adminMessage} adminError={adminError}/ >}{adminTab === 'reset' && <ContentResetPanel report={setAdminMessage} error={setAdminError} adminMessage={adminMessage} adminError={adminError} onReset={async()=>{await loadAll();setSummary(null);setTrees([]);setTreeTotal(0);setZones([]);setSpaces([]);setGallery([]);setAdminTab('trees');setTreeForm({treeId:'',commonName:'',scientificName:'',zone:'',condition:'healthy',notes:'',latitude:'',longitude:'',locationVerified:false,photoAltText:''});setEditingTree(null)}}/>}</>}</section>}
+      {page === 'admin' && <section className="content-page admin-page"><div className="page-heading admin-page-heading"><div><span className="section-kicker">GREENMAP / SECURE AREA</span><h1>{sessionUser ? 'Admin workspace' : 'Authorized access only'}</h1><p>{sessionUser ? 'Manage individually recorded trees, campus spaces and field documentation.' : 'Sign in to manage verified tree records, campus zones and field documentation.'}</p></div>{sessionUser && <button className="button button-outline" onClick={logout}>Sign out</button>}</div>{!sessionUser ? <form className="login-card" onSubmit={submitLogin}><div className="login-lock"><Icon name="lock" size={25}/></div><span className="section-kicker">PROTECTED ADMIN SESSION</span><h2>Welcome back.</h2><p>Use the administrator account provisioned on the server. Public registration is disabled.</p><label>Admin username<input name="username" autoComplete="username" required placeholder="Username"/></label><label>Password<input name="password" type="password" autoComplete="current-password" minLength="6" required placeholder="Password"/></label>{loginError && <p className="form-error" role="alert">{loginError}</p>}<button className="button button-primary button-full" disabled={loginBusy}>{loginBusy ? 'Signing in…' : 'Sign in securely'} <Icon name="arrow" size={16}/></button><p className="form-privacy">Only a provisioned active administrator can sign in.</p></form> : <><div className="admin-tabs">{[['trees','Tree records'],['import','Import CEP data'],['spaces','Green spaces'],['gallery','Gallery'],['responses','Survey responses'],['zones','Campus zones'],['summary','Survey summary'],['logs','Audit log'],['reset','Reset content']].map(([v,label]) => <button key={v} className={adminTab === v ? 'selected' : ''} onClick={() => {setAdminTab(v); setAdminMessage('');setAdminError('')}}>{label}</button>)}</div>{adminTab === 'trees' && <div className="admin-workgrid"><form className="admin-form" onSubmit={saveTree}><div className="form-heading"><div><span className="section-kicker">{editingTree ? 'EDIT RECORD' : 'NEW INDIVIDUAL RECORD'}</span><h2>{editingTree ? 'Update tree details' : 'Add a tree'}</h2></div>{editingTree && <button type="button" className="text-button" onClick={resetTreeForm}>Cancel edit</button>}</div><div className="form-two"><label>Tree ID<input value={treeForm.treeId} required onChange={e=>setTreeForm({...treeForm,treeId:e.target.value})} placeholder="e.g. TG-001"/></label><label>Common name<input value={treeForm.commonName} required onChange={e=>setTreeForm({...treeForm,commonName:e.target.value})} placeholder="Recorded name"/></label></div><label>Scientific name <span className="optional-label">If verified</span><input value={treeForm.scientificName} onChange={e=>setTreeForm({...treeForm,scientificName:e.target.value})} placeholder="Leave blank if unknown"/></label><div className="form-two"><label>Zone<select value={treeForm.zone} onChange={e=>setTreeForm({...treeForm,zone:e.target.value})}><option value="">Not assigned</option>{zones.map(z=><option key={z._id||z.slug} value={z._id||z.slug}>{z.name}</option>)}</select></label><label>Observed condition<select value={treeForm.condition} onChange={e=>setTreeForm({...treeForm,condition:e.target.value})}><option value="healthy">Healthy</option><option value="needs_attention">Needs attention</option><option value="uncertain">Uncertain</option></select></label></div><label>Selected place / address<input maxLength="300" value={treeForm.locationLabel} onChange={e=>setTreeForm({...treeForm,locationLabel:e.target.value})} placeholder="Choose a place on the map or enter an address"/></label><div className="form-two"><label>Latitude<input inputMode="decimal" value={treeForm.latitude} onChange={e=>setTreeForm({...treeForm,latitude:e.target.value})} placeholder="Auto-filled from map"/></label><label>Longitude<input inputMode="decimal" value={treeForm.longitude} onChange={e=>setTreeForm({...treeForm,longitude:e.target.value})} placeholder="Auto-filled from map"/></label></div><p className="admin-help">Selecting a point on the map saves its coordinates. Only mark a point after confirming it matches the real tree location.</p><button type="button" className="button button-outline button-full" onClick={()=>setLocationPicker(!locationPicker)}><Icon name="pin" size={16}/>{locationPicker ? 'Hide location picker' : 'Choose location on map'}</button>{locationPicker && <LeafletMap trees={[]} editable selectedLocation={treeForm.latitude && treeForm.longitude ? {lat:Number(treeForm.latitude),lng:Number(treeForm.longitude)} : null} selectedLocationLabel={treeForm.locationLabel} onPick={point=>setTreeForm(current=>({...current,latitude:String(point.lat),longitude:String(point.lng),locationLabel:point.label || current.locationLabel,locationVerified:Boolean(point.lat && point.lng)}))}/>}<label>Field notes<textarea rows="3" value={treeForm.notes} onChange={e=>setTreeForm({...treeForm,notes:e.target.value})} placeholder="Observations, source, maintenance needs…"/></label><label>Photo description (alt text)<input value={treeForm.photoAltText} onChange={e=>setTreeForm({...treeForm,photoAltText:e.target.value})} maxLength="180" placeholder="Describe the tree photo for accessibility"/></label><label>Tree photograph <span className="optional-label">JPG, PNG or WEBP · up to 5 MB</span><input type="file" accept="image/jpeg,image/png,image/webp"/></label>{adminError && <p className="form-error" role="alert">{adminError}</p>}{adminMessage && <p className="form-success" role="status">{adminMessage}</p>}<button className="button button-primary button-full" type="submit"><Icon name="plus" size={16}/>{editingTree ? 'Save changes' : 'Create pending record'}</button></form><div className="admin-records"><div className="section-heading"><div><span className="section-kicker">INVENTORY ADMIN</span><h2>Individual tree records</h2></div><span className="chart-total">{trees.length}</span></div>{trees.length ? <div className="record-list">{trees.map(tree=><article className="record-row" key={tree._id}><span className="record-tree-icon"><Icon name="tree" size={19}/></span><div className="record-main"><b>{tree.commonName}</b><small>{tree.treeId} · {tree.zone?.name || 'No zone'}</small><span className={`record-status ${tree.verificationStatus}`}>{tree.verificationStatus || 'pending'}</span></div><div className="record-actions"><button title="Edit record" onClick={()=>editTree(tree)}>Edit</button>{tree.verificationStatus !== 'verified' && <button title="Verify and publish" onClick={()=>verifyTree(tree,'verified')}>Verify</button>}<button title="Delete record" className="danger-action" onClick={()=>deleteTree(tree)}>Delete</button></div></article>)}</div> : <EmptyState title="No individual records yet" text="Add a tree from the actual field survey. The aggregate count of 38 is not auto-expanded into invented records."/>}</div></div>}{adminTab === 'import' && <CepImportPanel refresh={loadAll} report={setAdminMessage} error={setAdminError} adminMessage={adminMessage} adminError={adminError}/>}{adminTab === 'spaces' && <AdminSpaces spaces={spaces} zones={zones} refresh={loadAll} report={setAdminMessage} error={setAdminError} adminMessage={adminMessage} adminError={adminError}/ >}{adminTab === 'zones' && <AdminZones zones={zones} refresh={loadAll} report={setAdminMessage} error={setAdminError} adminMessage={adminMessage} adminError={adminError}/ >}{adminTab === 'logs' && <AuditLogPanel/>}{adminTab === 'gallery' && <AdminGallery gallery={gallery} refresh={loadAll} report={setAdminMessage} error={setAdminError} adminMessage={adminMessage} adminError={adminError}/ >}{adminTab === 'responses' && <SurveyResponses/>}{adminTab === 'summary' && <SurveySummaryForm summary={summary} refresh={loadAll} report={setAdminMessage} error={setAdminError} adminMessage={adminMessage} adminError={adminError}/ >}{adminTab === 'reset' && <ContentResetPanel report={setAdminMessage} error={setAdminError} adminMessage={adminMessage} adminError={adminError} onReset={async()=>{await loadAll();setSummary(null);setTrees([]);setTreeTotal(0);setZones([]);setSpaces([]);setGallery([]);setAdminTab('trees');setTreeForm({treeId:'',commonName:'',scientificName:'',zone:'',condition:'healthy',notes:'',latitude:'',longitude:'',locationVerified:false,photoAltText:''});setEditingTree(null)}}/>}</>}</section>}
     </main>
     <footer className="site-footer"><button className="footer-brand" onClick={()=>go('home')}><span className="brand-mark"><Icon name="leaf" size={21}/></span><b>green<span>map</span></b></button><p>Protect the record. Grow the impact.</p><div className="footer-links"><button onClick={()=>go('about')}>About</button><button onClick={()=>go('survey')}>Survey</button><button onClick={()=>go('admin')}>Admin access</button></div><small>THEEM COLLEGE OF ENGINEERING · BETEGAON · 2026</small></footer>
   </div>
@@ -610,7 +671,7 @@ function AuditLogPanel(){
 }
 
 function AdminSpaces({ spaces, zones, refresh, report, error, adminMessage, adminError }) {
-  const emptyForm = { name: '', description: '', zone: '', latitude: '', longitude: '', locationVerified: false, photoAltText: '' }
+  const emptyForm = { name: '', description: '', zone: '', latitude: '', longitude: '', locationLabel: '', locationVerified: false, photoAltText: '' }
   const [form, setForm] = useState(emptyForm)
   const [file, setFile] = useState(null)
   const [editing, setEditing] = useState(null)
@@ -619,7 +680,7 @@ function AdminSpaces({ spaces, zones, refresh, report, error, adminMessage, admi
   function edit(space){
     const coords=space.location?.coordinates
     setEditing(space)
-    setForm({name:space.name||'',description:space.description||'',zone:space.zone?._id||'',latitude:coords?String(coords[1]):'',longitude:coords?String(coords[0]):'',locationVerified:Boolean(space.locationVerified),photoAltText:space.photos?.[0]?.altText||space.name||''})
+    setForm({name:space.name||'',description:space.description||'',zone:space.zone?._id||'',latitude:coords?String(coords[1]):'',longitude:coords?String(coords[0]):'',locationLabel:space.locationLabel||'',locationVerified:Boolean(space.locationVerified),photoAltText:space.photos?.[0]?.altText||space.name||''})
     setFile(null);setLocationPicker(false);report('');error('')
   }
   async function submit(e){
@@ -628,7 +689,7 @@ function AdminSpaces({ spaces, zones, refresh, report, error, adminMessage, admi
     if(hasLat!==hasLng){error('Enter both latitude and longitude, or leave both blank.');return}
     if(hasLat&&(!Number.isFinite(Number(form.latitude))||!Number.isFinite(Number(form.longitude))||Math.abs(Number(form.latitude))>90||Math.abs(Number(form.longitude))>180)){error('Enter valid latitude and longitude values.');return}
     try{
-      const payload={name:form.name,description:form.description,zone:form.zone||null,status:'published',latitude:hasLat?Number(form.latitude):null,longitude:hasLng?Number(form.longitude):null,locationVerified:Boolean(hasLat)}
+      const payload={name:form.name,description:form.description,zone:form.zone||null,status:'published',latitude:hasLat?Number(form.latitude):null,longitude:hasLng?Number(form.longitude):null,locationLabel:hasLat?form.locationLabel:'',locationVerified:Boolean(hasLat)}
       const result=editing
         ? await request('/green-spaces/'+editing._id,{method:'PATCH',body:JSON.stringify(payload)})
         : await request('/green-spaces',{method:'POST',body:JSON.stringify(payload)})
@@ -649,10 +710,10 @@ function AdminSpaces({ spaces, zones, refresh, report, error, adminMessage, admi
       <label>Name<input required maxLength="140" value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/></label>
       <label>Zone<select value={form.zone} onChange={e=>setForm({...form,zone:e.target.value})}><option value="">No zone</option>{zones.map(z=><option key={z._id||z.slug} value={z._id||z.slug}>{z.name}</option>)}</select></label>
       <label>Description<textarea rows="4" maxLength="2000" value={form.description} onChange={e=>setForm({...form,description:e.target.value})}/></label>
-      <div className="form-two"><label>Latitude<input inputMode="decimal" value={form.latitude} onChange={e=>setForm({...form,latitude:e.target.value})} placeholder="Optional"/></label><label>Longitude<input inputMode="decimal" value={form.longitude} onChange={e=>setForm({...form,longitude:e.target.value})} placeholder="Optional"/></label></div>
+      <label>Selected place / address<input maxLength="300" value={form.locationLabel} onChange={e=>setForm({...form,locationLabel:e.target.value})} placeholder="Choose a place on the map or enter an address"/></label><div className="form-two"><label>Latitude<input inputMode="decimal" value={form.latitude} onChange={e=>setForm({...form,latitude:e.target.value})} placeholder="Auto-filled from map"/></label><label>Longitude<input inputMode="decimal" value={form.longitude} onChange={e=>setForm({...form,longitude:e.target.value})} placeholder="Auto-filled from map"/></label></div>
       <p className="admin-help">Choose the actual green-space location on the map before saving coordinates.</p>
       <button type="button" className="button button-outline button-full" onClick={()=>setLocationPicker(!locationPicker)}><Icon name="pin" size={16}/>{locationPicker?'Hide location picker':'Choose location on map'}</button>
-      {locationPicker&&<LeafletMap trees={[]} editable selectedLocation={form.latitude&&form.longitude?{lat:Number(form.latitude),lng:Number(form.longitude)}:null} onPick={point=>setForm({...form,latitude:String(point.lat),longitude:String(point.lng)})}/>}
+      {locationPicker&&<LeafletMap trees={[]} editable selectedLocation={form.latitude&&form.longitude?{lat:Number(form.latitude),lng:Number(form.longitude)}:null} selectedLocationLabel={form.locationLabel} onPick={point=>setForm(current=>({...current,latitude:String(point.lat),longitude:String(point.lng),locationLabel:point.label||current.locationLabel,locationVerified:Boolean(point.lat&&point.lng)}))}/>}
       <label>Photo description (alt text)<input maxLength="180" value={form.photoAltText} onChange={e=>setForm({...form,photoAltText:e.target.value})} placeholder="Describe the photograph"/></label>
       <label>Photograph <span className="optional-label">Optional · JPG, PNG or WEBP, up to 5 MB</span><input type="file" accept="image/jpeg,image/png,image/webp" onChange={e=>setFile(e.target.files?.[0]||null)}/></label>
       {adminError&&<p className="form-error" role="alert">{adminError}</p>}{adminMessage&&<p className="form-success" role="status">{adminMessage}</p>}
