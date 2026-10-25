@@ -76,6 +76,9 @@ function Icon({ name, size = 18 }) {
     pin: <><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></>,
     tree: <><path d="M12 22v-7"/><path d="m8 15 4-5 4 5"/><path d="m5 11 7-8 7 8a3 3 0 0 1-2.2 5H7.2A3 3 0 0 1 5 11Z"/></>,
     search: <><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 5 5"/></>,
+    'chevron-up': <><path d="m6 14 6-6 6 6"/></>,
+    info: <><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></>,
+    locate: <><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></>,
     shield: <><path d="M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11Z"/><path d="m9 12 2 2 4-4"/></>,
     chart: <><path d="M4 19V5M4 19h17"/><path d="m7 15 4-4 3 2 5-7"/></>,
     image: <><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m21 15-5-5L5 20"/></>,
@@ -331,9 +334,9 @@ function LeafletMap({ trees = [], greenSpaces = [], editable = false, selectedLo
     </div>
     {editable && <div className="location-picker-fields">
       <label className="selected-address-field">Selected address<input maxLength="300" value={selectedLocationLabel || ''} onChange={event => onPickRef.current?.({ lat: locationLatitude, lng: locationLongitude, label: event.target.value })} placeholder="Select a place on the map or search above"/></label>
-      <label>Latitude<span className="coordinate-input"><Icon name="pin" size={17}/><input inputMode="decimal" value={locationLatitude ?? ''} onChange={event => onPickRef.current?.({lat:event.target.value,lng:locationLongitude,label:selectedLocationLabel})} placeholder="Auto-filled"/></span></label>
-      <label>Longitude<span className="coordinate-input"><Icon name="pin" size={17}/><input inputMode="decimal" value={locationLongitude ?? ''} onChange={event => onPickRef.current?.({lat:locationLatitude,lng:event.target.value,label:selectedLocationLabel})} placeholder="Auto-filled"/></span></label>
-      <button type="button" className="use-current-location" disabled={currentLocationBusy} onClick={useCurrentLocation}><Icon name="pin" size={17}/>{currentLocationBusy ? 'Locating…' : 'Use current location'}</button>
+      <label>Latitude<span className="coordinate-input"><Icon name="locate" size={17}/><input inputMode="decimal" value={locationLatitude ?? ''} onChange={event => onPickRef.current?.({lat:event.target.value,lng:locationLongitude,label:selectedLocationLabel})} placeholder="Auto-filled"/></span></label>
+      <label>Longitude<span className="coordinate-input"><Icon name="locate" size={17}/><input inputMode="decimal" value={locationLongitude ?? ''} onChange={event => onPickRef.current?.({lat:locationLatitude,lng:event.target.value,label:selectedLocationLabel})} placeholder="Auto-filled"/></span></label>
+      <button type="button" className="use-current-location" disabled={currentLocationBusy} onClick={useCurrentLocation}><Icon name="locate" size={17}/>{currentLocationBusy ? 'Locating…' : 'Use current location'}</button>
     </div>}
     {editable && <div className="location-picker-tip"><Icon name="info" size={17}/><span>Click on the map to adjust the exact location. The latitude and longitude fields update automatically.</span></div>}
   </div>
