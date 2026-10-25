@@ -316,3 +316,17 @@ textarea,input:not([type="radio"]):not([type="file"]):not([type="checkbox"]){min
 :root[data-theme="dark"] .summary-rule{border-color:#2a4032}
 :root[data-theme="dark"] .api-notice{background:#302819;border-color:#65512c;color:#f0d79b}
 :root[data-theme="dark"] .api-notice button{color:#f0d79b}
+
+
+/* CEP import and campus location presentation */
+.cep-import-grid{grid-template-columns:minmax(0,1.1fr) minmax(260px,.9fr)}
+.cep-import-grid .admin-records{display:flex;flex-direction:column;align-items:flex-start;gap:12px}
+.cep-import-grid .summary-rule{width:100%}
+.cep-import-grid .admin-help{max-width:680px}
+.import-integrity{background:#f8faf5}
+.import-integrity p{font-size:13px;line-height:1.8;margin:0}
+.tree-card-body .record-status{margin-top:7px;white-space:normal}
+.tree-card-body .record-status.pending{background:#f5f0df;color:#8d712b}
+:root[data-theme="dark"] .import-integrity{background:#15231a}
+:root[data-theme="dark"] .tree-card-body .record-status.pending{background:#41371f;color:#f1d891}
+@media(max-width:760px){.cep-import-grid{grid-template-columns:minmax(0,1fr)}}
