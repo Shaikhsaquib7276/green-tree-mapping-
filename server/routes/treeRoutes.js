@@ -22,7 +22,7 @@ async function resolveZone(value){
 async function populateQuery(query){return query.populate('zone','name slug').lean()}
 router.get('/',asyncRoute(async(req,res)=>{
  const filter={}
- if(!req.user)filter.verificationStatus='verified'
+ if(!req.user)filter.verificationStatus={$ne:'rejected'}
  if(req.query.condition)filter.condition=req.query.condition
  if(req.query.verificationStatus&&req.user)filter.verificationStatus=req.query.verificationStatus
  if(req.query.zone){const z=await CampusZone.findOne({$or:[{slug:String(req.query.zone).toLowerCase()},...(mongoose.isValidObjectId(req.query.zone)?[{_id:req.query.zone}]:[])]}).select('_id');if(!z)return res.json({items:[],total:0,page:1,limit:20});filter.zone=z._id}
@@ -34,7 +34,7 @@ router.get('/',asyncRoute(async(req,res)=>{
 }))
 router.get('/:id',asyncRoute(async(req,res)=>{
  const filter=mongoose.isValidObjectId(req.params.id)?{_id:req.params.id}:{treeId:String(req.params.id).toUpperCase()}
- if(!req.user)filter.verificationStatus='verified'
+ if(!req.user)filter.verificationStatus={$ne:'rejected'}
  const tree=await Tree.findOne(filter).populate('zone','name slug').lean()
  if(!tree)return res.status(404).json({success:false,error:{code:'TREE_NOT_FOUND',message:'Tree record not found.'}})
  res.json({tree})
