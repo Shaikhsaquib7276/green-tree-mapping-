@@ -59,7 +59,7 @@ The survey summary is separate from individual tree documents. This project does
    npm run admin:create
    ```
 
-   If the account already exists and you need to update its password, set the matching `ADMIN_USERNAME` and new `ADMIN_PASSWORD` in `server/.env` and run `npm run admin:reset`. These scripts require a live Atlas connection. Do not commit `server/.env`; remove `ADMIN_PASSWORD` from it after setup where practical.
+   For Render deployments where Shell is unavailable, set `ADMIN_USERNAME`, `ADMIN_DISPLAY_NAME`, and `ADMIN_PASSWORD` in the service's private Environment settings and redeploy. On startup, GreenMap creates that initial admin only if the username does not already exist; it never changes an existing account's password. After confirming that login works, remove `ADMIN_PASSWORD` from Render Environment and redeploy. Locally, you can also run `npm run admin:create`; to change an existing account password, use `npm run admin:reset`. These scripts require a live Atlas connection. Never commit real passwords or `.env` files.
 
 6. Import the aggregate summary and the four known zones:
 
